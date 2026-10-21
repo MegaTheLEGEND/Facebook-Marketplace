@@ -1,65 +1,90 @@
-# Facebook "Marketplace only" – Morphe patch
+# Facebook "Marketplace only" (Morphe patch)
 
-Target: `com.facebook.katana` **582.0.0.50.54** (plain APK). Morphe patches the APK directly; you don't decompile or recompile anything.
+Turns the Facebook Android app into a Marketplace-only app. It is a [Morphe](https://github.com/MorpheApp) patch: you don't decompile or recompile anything, Morphe patches the APK directly.
+
+**Target:** `com.facebook.katana` **582.0.0.50.54** (plain APK, arm64). The patch is anchored on Redex-obfuscated class names, so it is tied to this exact version.
+
+Not affiliated with Meta. For personal use; don't commit or redistribute Facebook's APK.
 
 ## What it does
 
-1. **Opens on Marketplace.** Hooks the end of the tab bar controller's "determine starting tab" method, finds the Marketplace tab by ID (`1606854132932955`, not list position) and sets the controller's selected position and tab ID to it. Covers both the setup call and the reset call.
-2. **Hides the bottom tab bar** (option `hideTabBar`, default on): Feed / Reels / Watch / Notifications / Menu aren't one tap away.
-3. **Fails safe.** If Marketplace isn't in the account's tab list, or any lookup fails, it does nothing and Facebook opens normally. It cannot crash startup.
+| Feature | Option (default) | How |
+|---|---|---|
+| Opens on Marketplace | always on | Hooks the end of `X.2GO.A06(Z)V` (the tab bar controller's "determine starting tab"), finds the Marketplace tab by ID (`1606854132932955`, not list position) and selects it. |
+| Hides the bottom tab bar | `hideTabBar` (on) | Same hook sets the tab bar view to `GONE`. |
+| Locks navigation | `lockNavigation` (on) | No swiping between tabs (`X.25n`, the main tab ViewPager, never intercepts or handles touches); no left-hand Facebook menu (`X.24g` SlidingPanelScrollView: no edge swipe, "snap to panel" is a no-op, so the hamburger does nothing). |
 
-Not touched on purpose: login/session, Marketplace routes, messaging, listing creation, notifications, deep links.
+| Links open in the system browser | `externalLinks` (on) | `X.dBh.A00` (the link launcher's WEBVIEW/EXTERNAL/CUSTOM_TABS decision) always returns EXTERNAL, same as Facebook's own "links open externally" setting. |
 
-## Build + patch in one command
+If Marketplace isn't in the account's tab list, or a lookup fails, the extension does nothing and Facebook opens normally.
 
-Morphe Desktop only *applies* a finished `.mpp`; it doesn't compile patches. `build.ps1` / `build.sh` clone `MorpheApp/morphe-patches`, copy these sources in, run `:patches:buildAndroid` (the same task morphe-patches' own CI uses), download Morphe Desktop's CLI jar and patch a copy of your APK.
+See [TODO.md](TODO.md) for what's next.
 
-1. Java 21+ and git installed.
-2. A GitHub token with only `read:packages` (https://github.com/settings/tokens). The Morphe Gradle plugin lives on GitHub Packages, which needs a login even for public reads. morphe-patches' `settings.gradle.kts` reads it from `GITHUB_ACTOR`/`GITHUB_TOKEN` (or Gradle properties `gpr.user`/`gpr.key`).
-3. Windows (PowerShell):
-   ```
-   $env:GITHUB_ACTOR = "your-username"; $env:GITHUB_TOKEN = "ghp_..."
-   .\build.ps1 -Apk "C:\path\to\com.facebook.katana_582.0.0.50.54-....apk"
-   ```
-   Linux/macOS:
-   ```
-   export GITHUB_ACTOR=your-username GITHUB_TOKEN=ghp_...
-   ./build.sh /path/to/com.facebook.katana_582.0.0.50.54-....apk
-   ```
-Result: `work/facebook-patched.apk`. The built bundle is `work/morphe-patches/patches/build/libs/patches-*.mpp` if you'd rather load it in the Desktop GUI (Expert mode).
+## Status
 
-Install on a test device with a test account first. Keep the original APK. The patched APK is re-signed, so it can't update over a Play Store install; uninstall first and sign in again.
-
-## What is and isn't verified
-
-Checked directly against your 19 `classes*.dex` files (androguard):
-
-| Check | Result |
+| Piece | State |
 |---|---|
-| Anchor string `TabBarController.determineStartingTabPosition` | Exactly one method in all 19 dex files |
-| That method | `private final A06(Z)V` in `LX/2GO;` (jadx's `C2GO`); 29 registers, so `p0` = v27, which is why the patch uses `invoke-static/range`; exactly one `return-void` |
-| Names the extension reflects on | `2GO.A00(2GO)` public static → `1Hz`; `1Hz.A05()` → `ImmutableList`; `2GO.A01` int, `A02` long, `A09` ViewGroup; `TabTag.A03` public final long (on the abstract base class) |
-| Marketplace tab ID `1606854132932955` | Used by `FBMarketplaceNativeModule.isMarketplaceTabCurrentlySelected`, `MarketplaceTabUriMapHelper`, `MarketplaceTabVisitFeatureExtractor` and the tab-availability switch in `2GO.A09` |
-| Extension logic | Compiled and unit-tested on a plain JVM against mocks with the real class shape (`tests/`, 7 cases pass) |
-| Kotlin patch + fingerprint | Rewritten to match the real API patterns in morphe-patches (`Fingerprint(... filters = listOf(string(...)))`, `bytecodePatch`, `booleanOption`, `extendWith`). **Not compiled** – the sandbox can't download Morphe's dependencies |
-| Injected smali | Single instruction, **not assembled** here (no smali assembler offline) |
-| Runs on a device / tab bar stays hidden | **Not tested** |
+| Opens on Marketplace, tab bar hidden | Works on device |
+| Launch crash (`VerifyError`, register `v27` type `Conflict`) | Fixed. `A06` reuses its `this` register as scratch, so the patch captures `this` at method entry and the return hooks take no registers |
+| External links | Written against the real dex (register counts, enum fields and signature checked), **not yet tested on device** |
+| Navigation lock | Written against the real dex (register counts, signatures and callers checked), **not yet tested on device** |
+| Extension logic | Unit-tested on a plain JVM (`tests/`) |
 
 Known limits:
-- **No `compatibleWith`.** morphe-patches' `Compatibility` also wants the app's signing-certificate SHA-256, which isn't in the dex files. Morphe Manager therefore treats this as a universal patch. The fingerprint is what stops it patching the wrong thing. If the CLI applies no patches, check whether it needs the patch enabled by name. I couldn't confirm how Desktop handles universal patches.
-- Notification taps and deep links to Feed, Reels, etc. aren't blocked; they just have no tab bar to return from.
-- Names (`2GO`, `A00`, `A05`, ...) are specific to 582.0.0.50.54.
+- The hamburger icon is still drawn; tapping it does nothing.
+- Notification taps and deep links can still open other screens.
+- No `compatibleWith` (the signing-cert hash isn't in the dex), so Morphe treats it as a universal patch; the fingerprints stop it patching the wrong thing.
 
-## If the build fails
+## Build
 
-Send the Gradle error. Likely spots: a token problem, or a small Kotlin/DSL mismatch in the two files under `patches/src/main/kotlin/.../marketplace/`. What they must express:
-- **Fingerprint:** `private final void (boolean)` containing the string `TabBarController.determineStartingTabPosition`.
-- **Patch body:** before every `return-void` in it, insert  
-  `invoke-static/range {p0 .. p0}, Lapp/morphe/extension/facebook/marketplace/MarketplaceOnly;->onStartingTabDeterminedHideBar(Ljava/lang/Object;)V`  
-  (`onStartingTabDetermined` to leave the tab bar alone).
+Needs Java 21+ (Eclipse Temurin; Oracle JDK breaks Morphe's signing step), git, internet, and a GitHub **classic** token with only `read:packages` (the Morphe Gradle plugin lives on GitHub Packages).
 
-## Run the extension tests
+Windows (cmd):
+```
+set GITHUB_ACTOR=your-username
+set GITHUB_TOKEN=ghp_...
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Apk "C:\path\to\com.facebook.katana_582.0.0.50.54-....apk" -JavaExe "C:\Program Files\Eclipse Adoptium\jdk-21...\bin\java.exe"
+```
+Flags: `-KeepTabBar` (leave the bottom bar), `-KeepNavigation` (don't lock swiping / left menu), `-KeepInAppBrowser` (keep the in-app WebView).
 
+Linux/macOS:
+```
+export GITHUB_ACTOR=your-username GITHUB_TOKEN=ghp_...
+./build.sh /path/to/com.facebook.katana_582.0.0.50.54-....apk      # KEEP_TAB_BAR=1 / KEEP_NAVIGATION=1 / KEEP_IN_APP_BROWSER=1 to opt out
+```
+
+The scripts clone `MorpheApp/morphe-patches` into `work/`, copy `extensions/` and `patches/` in, build the bundle, download Morphe Desktop's CLI and patch a **copy** of your APK. Result: `work/facebook-patched.apk`. Uninstall the Play Store version first (it's re-signed) and sign in again.
+
+Test it:
+```
+adb shell am force-stop com.facebook.katana & adb logcat -c
+adb shell monkey -p com.facebook.katana -c android.intent.category.LAUNCHER 1
+adb logcat | findstr /i "AndroidRuntime VerifyError katana"
+```
+
+## Layout
+
+```
+patches/     Kotlin: fingerprints + the "Marketplace only" patch
+extensions/  Java: runtime logic injected into the app (MarketplaceOnly)
+tests/       Plain-JVM unit tests for the extension (mock class shapes)
+tools/       dexscan.py - find strings, callers, classes in the app's dex files
+build.ps1 / build.sh
+```
+
+### Unit tests
 ```
 cd tests && javac -d out $(find src -name '*.java') ../extensions/facebook/src/main/java/app/morphe/extension/facebook/marketplace/MarketplaceOnly.java && java -cp out Test
 ```
+
+### Finding things in a new build (`tools/dexscan.py`)
+Unzip the APK's `classes*.dex` into a folder, then:
+```
+python tools/dexscan.py dexdir strings "(?i)reels"          # regex over all strings
+python tools/dexscan.py dexdir strref SomeExactString        # methods that reference it
+python tools/dexscan.py dexdir callers "LX/24g;" A0E         # who calls a method
+python tools/dexscan.py dexdir class "LX/25n;"               # fields + methods
+python tools/dexscan.py dexdir dis "LX/24g;" A0E             # registers, refs; check free registers BEFORE injecting smali
+python tools/dexscan.py dexdir subclasses "Landroidx/viewpager/widget/ViewPager;"
+```
+Rule learned the hard way: before injecting smali, check the method's register count and never read `p0` at a `return-void`; compilers reuse parameter registers.

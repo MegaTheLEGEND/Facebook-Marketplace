@@ -29,6 +29,13 @@ internal val lockNavigationOption = booleanOption(
         "and edge swipe), so Reels, Groups, Dating etc. can't be reached from the main screen."
 )
 
+internal val externalLinksOption = booleanOption(
+    key = "externalLinks",
+    default = true,
+    title = "Open links in the system browser",
+    description = "Never use Facebook's in-app WebView browser; every link opens in the default browser app."
+)
+
 /**
  * Universal-style declaration (no compatibleWith): the compatibility object needs the app's
  * signing-certificate SHA-256, which isn't available from the dex files. The fingerprint
@@ -47,10 +54,12 @@ val marketplaceOnlyPatch = bytecodePatch(
 
     hideTabBarOption()
     lockNavigationOption()
+    externalLinksOption()
 
     execute {
         val hideTabBar by hideTabBarOption
         val lockNavigation by lockNavigationOption
+        val externalLinks by externalLinksOption
 
         val entryPoint =
             if (hideTabBar == true) "onStartingTabDeterminedHideBar" else "onStartingTabDetermined"
@@ -112,6 +121,24 @@ val marketplaceOnlyPatch = bytecodePatch(
             SlidingPanelTouchFingerprint.method.addInstructions(0, returnFalse)
             // ...and no programmatic "open panel" (hamburger tap, RN module, etc.).
             SlidingPanelOpenFingerprint.method.addInstructions(0, "return-void")
+        }
+
+        if (externalLinks == true) {
+            // Link launcher decision: always (EXTERNAL, FORCE_EXTERNAL_BROWSER), same result as
+            // Facebook's own "links open externally" setting. v0/v1 are free locals (static
+            // method, 3 locals), no branches. Check against the real enum fields with:
+            //   dexscan dexdir dis "LX/dqt;" "<clinit>"   (A02 = EXTERNAL)
+            //   dexscan dexdir dis "LX/5vy;" "<clinit>"   (A06 = BROWSER_IPC_FORCE_EXTERNAL_BROWSER)
+            LinkLaunchModeFingerprint.method.addInstructions(
+                0,
+                """
+                    sget-object v0, LX/dqt;->A02:LX/dqt;
+                    sget-object v1, LX/5vy;->A06:LX/5vy;
+                    invoke-static {v0, v1}, Landroid/util/Pair;->create(Ljava/lang/Object;Ljava/lang/Object;)Landroid/util/Pair;
+                    move-result-object v0
+                    return-object v0
+                """
+            )
         }
     }
 }

@@ -1,20 +1,34 @@
+# Build workspace: cloned morphe-patches template, Morphe Desktop jar, APKs, signing keystore
+work/
 
+# APKs / bundles / dex dumps (never commit Facebook's APK, it isn't ours to redistribute)
+*.apk
+*.apks
+*.xapk
+*.mpp
+*.dex
+*.keystore
+*.jks
 
-# Logs
-*.log
+# Local test build output
+tests/out/
+out/
+build/
+.gradle/
 
+# Secrets (GitHub Packages token for the Morphe Gradle plugin)
+.env
+*.token
+gradle.properties
+local.properties
 
-work/facebook/facebook-582.0.0.50.54-patches-1.47.0.apk
-
-work/facebook.apk
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE files
+# Tooling / IDE / OS
+__pycache__/
+*.pyc
+*.pkl
 .idea/
 .vscode/
-
-# Environment variables
-.env
+*.iml
+.DS_Store
+Thumbs.db
+logcat*.txt

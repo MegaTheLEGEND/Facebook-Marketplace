@@ -5,7 +5,8 @@ param(
   [Parameter(Mandatory = $true)][string]$Apk,
   [string]$JavaExe = "java",          # path to a Temurin/Zulu/OpenJDK java.exe if Oracle JDK is first on PATH
   [switch]$KeepTabBar,                 # only change the startup tab; leave the bottom tab bar visible
-  [switch]$KeepNavigation              # do NOT lock swiping between tabs / the left Facebook menu
+  [switch]$KeepNavigation,             # do NOT lock swiping between tabs / the left Facebook menu
+  [switch]$KeepInAppBrowser            # do NOT force links into the system browser
 )
 
 # Native tools (java, git, gradle) write progress to stderr. Under "Stop", Windows PowerShell
@@ -103,10 +104,18 @@ Copy-Item -LiteralPath $Apk $workApk -Force
 $patchArgs = @("-jar", $desk, "patch", "-p", $bundle.FullName, "--exclusive", "-e", "Marketplace only")
 if ($KeepTabBar) { $patchArgs += "-OhideTabBar=false" }
 if ($KeepNavigation) { $patchArgs += "-OlockNavigation=false" }
+if ($KeepInAppBrowser) { $patchArgs += "-OexternalLinks=false" }
 $patchArgs += $workApk
 & $JavaExe @patchArgs
 if ($LASTEXITCODE -ne 0) { Fail "Patching failed (exit $LASTEXITCODE) - copy the output above and send it to Claude" }
 
+# Morphe writes the result to <work>\facebook\facebook-<version>-patches-<bundle>.apk; find the newest one.
+$out = Get-ChildItem -Path (Join-Path $Work "facebook") -Filter *.apk -File -ErrorAction SilentlyContinue |
+       Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $out) { Fail "Patching finished but no output APK was found under $Work\facebook" }
+$final = Join-Path $Work "facebook-patched.apk"
+Copy-Item -LiteralPath $out.FullName $final -Force
+
 Write-Host ""
-Write-Host "Done. Patched APK: $(Join-Path $Work 'facebook-patched.apk')" -ForegroundColor Green
+Write-Host "Done. Patched APK: $final" -ForegroundColor Green
 Write-Host "Install on a test device first. Keep your original APK."

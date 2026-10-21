@@ -53,7 +53,16 @@ fi
 
 echo "==> Patching (run on a COPY; original is untouched)"
 cp "$APK" "$WORK/facebook.apk"
-java -jar "$DESK" patch -p "$BUNDLE" "$WORK/facebook.apk"
+ARGS=(-jar "$DESK" patch -p "$BUNDLE" --exclusive -e "Marketplace only")
+[ -n "${KEEP_TAB_BAR:-}" ]   && ARGS+=("-OhideTabBar=false")      # leave the bottom tab bar visible
+[ -n "${KEEP_NAVIGATION:-}" ] && ARGS+=("-OlockNavigation=false")  # don't lock swiping / left menu
+[ -n "${KEEP_IN_APP_BROWSER:-}" ] && ARGS+=("-OexternalLinks=false") # keep Facebook's in-app WebView browser
+java "${ARGS[@]}" "$WORK/facebook.apk"
+
+# Morphe writes <work>/facebook/facebook-<version>-patches-<bundle>.apk; copy the newest to a stable name.
+OUT=$(ls -t "$WORK"/facebook/*.apk 2>/dev/null | head -1)
+[ -n "$OUT" ] || { echo "Patching finished but no output APK under $WORK/facebook"; exit 1; }
+cp "$OUT" "$WORK/facebook-patched.apk"
 
 echo
 echo "Done. Patched APK: $WORK/facebook-patched.apk"

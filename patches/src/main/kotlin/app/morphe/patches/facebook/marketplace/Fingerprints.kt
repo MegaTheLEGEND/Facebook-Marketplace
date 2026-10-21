@@ -72,3 +72,26 @@ internal object SlidingPanelOpenFingerprint : Fingerprint(
     returnType = "V",
     parameters = listOf("Ljava/lang/String;", "Ljava/lang/String;", "Z")
 )
+
+// ---------------------------------------------------------------------------------------------
+// External links (no in-app WebView browser)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `X.dBh.A00(Intent, FbUserSession, dBh, ArrayList)` returns `Pair<dqt, 5vy>`: how to open a link
+ * (`dqt`: A03 = WEBVIEW, A02 = EXTERNAL, A01 = CUSTOM_TABS) plus the reason (`5vy`; A06 =
+ * BROWSER_IPC_FORCE_EXTERNAL_BROWSER). dBh.A04 (called from every A07/A08/A0A link entry point)
+ * branches on it. Returning (EXTERNAL, FORCE_EXTERNAL) is exactly what Facebook's own
+ * "links open externally" setting produces. Static, 3 locals (v0..v2 free), no try blocks.
+ */
+internal object LinkLaunchModeFingerprint : Fingerprint(
+    definingClass = "LX/dBh;",
+    name = "A00",
+    returnType = "Landroid/util/Pair;",
+    parameters = listOf(
+        "Landroid/content/Intent;",
+        "Lcom/facebook/auth/usersession/FbUserSession;",
+        "LX/dBh;",
+        "Ljava/util/ArrayList;"
+    )
+)
