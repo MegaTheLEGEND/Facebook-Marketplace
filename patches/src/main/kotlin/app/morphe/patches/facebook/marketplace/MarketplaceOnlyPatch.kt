@@ -1,12 +1,15 @@
 package app.morphe.patches.facebook.marketplace
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.booleanOption
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMutable
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
+import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
 
@@ -36,6 +39,20 @@ internal val externalLinksOption = booleanOption(
     description = "Never use Facebook's in-app WebView browser; every link opens in the default browser app."
 )
 
+internal val blockReelsOption = booleanOption(
+    key = "blockReels",
+    default = true,
+    title = "Block Reels / fullscreen video viewer",
+    description = "Reels (and any other video opened in Facebook's fullscreen Watch/Reels viewer) can no longer be opened from feeds, profiles, deep links or notifications."
+)
+
+internal val marketplaceIsHomeOption = booleanOption(
+    key = "marketplaceIsHome",
+    default = true,
+    title = "Marketplace is the home tab",
+    description = "Back on Marketplace's root leaves the app instead of jumping to the Facebook Home feed."
+)
+
 /**
  * Universal-style declaration (no compatibleWith): the compatibility object needs the app's
  * signing-certificate SHA-256, which isn't available from the dex files. The fingerprint
@@ -55,11 +72,15 @@ val marketplaceOnlyPatch = bytecodePatch(
     hideTabBarOption()
     lockNavigationOption()
     externalLinksOption()
+    blockReelsOption()
+    marketplaceIsHomeOption()
 
     execute {
         val hideTabBar by hideTabBarOption
         val lockNavigation by lockNavigationOption
         val externalLinks by externalLinksOption
+        val blockReels by blockReelsOption
+        val marketplaceIsHome by marketplaceIsHomeOption
 
         val entryPoint =
             if (hideTabBar == true) "onStartingTabDeterminedHideBar" else "onStartingTabDetermined"
@@ -139,6 +160,36 @@ val marketplaceOnlyPatch = bytecodePatch(
                     return-object v0
                 """
             )
+        }
+
+        if (blockReels == true) {
+            // The whole Reels / fullscreen-video viewer launch chain (see Fingerprints.kt):
+            //   7rP.A01 -> 4Ok.A0C -> 4Ok.A0B -> 4Ok.A03 -> ImmersiveActivity
+            // 7rP.A01 also pre-starts the player (you'd hear audio with nothing on screen), so it is
+            // blocked too. 4Ok.A0B claims "handled" (true) instead of false so callers don't fall back to
+            // the legacy fullscreen player. All are no-register returns; v0 is free in A0B (28 locals).
+            WarionEntryPointFingerprint.method.addInstructions(0, "return-void")
+            WatchEntryPointLaunchFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
+            WatchEntryPointLaunchAltFingerprint.method.addInstructions(0, "return-void")
+            WatchEntryPointStartFingerprint.method.addInstructions(0, "return-void")
+        }
+
+        if (marketplaceIsHome == true) {
+            // In onBackPressedInternal the target tab is `invoke-virtual/range {v16..v16}, X.1Hz;->A02()J`
+            // followed by `move-result-wide v17` (verified in the dex; it occurs exactly once). Swap just the
+            // invoke for a static no-arg call (same 3-code-unit size, the move-result stays untouched), so
+            // the "home tab" is Marketplace and back, with nothing left to pop, exits instead of switching.
+            BackPressedFingerprint.method.apply {
+                val index = implementation!!.instructions.indexOfFirst { instruction ->
+                    val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
+                    reference != null &&
+                        reference.definingClass == "LX/1Hz;" &&
+                        reference.name == "A02" &&
+                        reference.returnType == "J"
+                }
+                check(index >= 0) { "1Hz.A02() call not found in onBackPressedInternal" }
+                replaceInstruction(index, "invoke-static {}, $EXTENSION_CLASS->marketplaceHomeTabId()J")
+            }
         }
     }
 }

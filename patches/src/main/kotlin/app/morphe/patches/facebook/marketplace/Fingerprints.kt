@@ -95,3 +95,87 @@ internal object LinkLaunchModeFingerprint : Fingerprint(
         "Ljava/util/ArrayList;"
     )
 )
+
+// ---------------------------------------------------------------------------------------------
+// Reels / fullscreen video viewer ("Warion" watch entry point)
+// ---------------------------------------------------------------------------------------------
+// Traced from a real logcat (tapping a reel on a profile) and the dex:
+//   fb4a.WarionEntryPointHelper (X.7rP.A01) -> X.4Ok.A0C -> X.4Ok.A0B -> X.4Ok.A03
+//   -> startActivity(com.facebook.katana.immersiveactivity.ImmersiveActivity) hosting ReelsVddLayout.
+// Feed/profile reel taps reach 7rP.A01 via AFP.A03 -> AFV.A01 -> AFc.DGA; deep links, notifications and
+// the legacy fullscreen player reach 4Ok.A0B/A0C directly. ImmersiveActivity itself is the generic host
+// for ALL full-screen Facebook surfaces (Marketplace item pages included), so it must NOT be blocked.
+
+/** "Start the video/reel viewer": also pre-starts the player (audio) before launching, so block it too. */
+internal object WarionEntryPointFingerprint : Fingerprint(
+    definingClass = "LX/7rP;",
+    name = "A01",
+    returnType = "V",
+    parameters = listOf(
+        "Landroid/content/Context;",
+        "Lcom/facebook/auth/usersession/FbUserSession;",
+        "LX/93e;",
+        "I"
+    )
+)
+
+/** Decision + launch, returns "handled". 28 locals. The fallback inside it starts the legacy FullscreenVideoPlayerActivity. */
+internal object WatchEntryPointLaunchFingerprint : Fingerprint(
+    definingClass = "LX/4Ok;",
+    name = "A0B",
+    returnType = "Z",
+    parameters = listOf(
+        "Landroid/content/Context;",
+        "Lcom/facebook/auth/usersession/FbUserSession;",
+        "LX/9nG;",
+        "LX/93e;",
+        "I",
+        "Z"
+    )
+)
+
+internal object WatchEntryPointLaunchAltFingerprint : Fingerprint(
+    definingClass = "LX/4Ok;",
+    name = "A0A",
+    returnType = "V",
+    parameters = listOf(
+        "Landroid/content/Context;",
+        "Lcom/facebook/auth/usersession/FbUserSession;",
+        "LX/Vgf;",
+        "LX/93e;",
+        "Z",
+        "Z"
+    )
+)
+
+/** Static: the code that actually builds the intent and starts the immersive Warion activity. */
+internal object WatchEntryPointStartFingerprint : Fingerprint(
+    definingClass = "LX/4Ok;",
+    name = "A03",
+    returnType = "V",
+    parameters = listOf(
+        "Landroid/content/Context;",
+        "Lcom/facebook/auth/usersession/FbUserSession;",
+        "LX/93e;",
+        "Z",
+        "Z",
+        "Z"
+    )
+)
+
+// ---------------------------------------------------------------------------------------------
+// Back button
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `FbMainTabActivityDelegate.onBackPressedInternal(J)Z`. After the tab's own stack declines the press and
+ * the fragment backstack is empty, it switches to the "home tab" (target id = `X.1Hz.A02()J`, 2392950137 or
+ * 4748854339) unless the current tab already has that id, and only then tries `moveTaskToBack` (log tag
+ * `back_press_pop_tab_backstack` for the switch). With Marketplace as the only tab that put you on Feed.
+ */
+internal object BackPressedFingerprint : Fingerprint(
+    definingClass = "Lcom/facebook/katana/activity/FbMainTabActivityDelegate;",
+    name = "onBackPressedInternal",
+    returnType = "Z",
+    parameters = listOf("J")
+)

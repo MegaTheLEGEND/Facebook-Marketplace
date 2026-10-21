@@ -109,6 +109,105 @@ def load_all(d):
     return [Dex(p) for p in sorted(glob.glob(d + '/classes*.dex'), key=lambda x: (len(x), x))]
 
 
+
+# ----------------------------------------------------------------------------------------------
+# Full (register-level) disassembly, for reading branches. `dis --full [--range LO HI]`
+# ----------------------------------------------------------------------------------------------
+_NAMES = {}
+def _n(op, name, fmt): _NAMES[op] = (name, fmt)
+for op, name, fmt in [
+    (0x00,'nop','10x'),(0x01,'move','12x'),(0x02,'move/from16','22x'),(0x03,'move/16','32x'),(0x04,'move-wide','12x'),
+    (0x05,'move-wide/from16','22x'),(0x06,'move-wide/16','32x'),(0x07,'move-object','12x'),(0x08,'move-object/from16','22x'),
+    (0x09,'move-object/16','32x'),(0x0a,'move-result','11x'),(0x0b,'move-result-wide','11x'),(0x0c,'move-result-object','11x'),
+    (0x0d,'move-exception','11x'),(0x0e,'return-void','10x'),(0x0f,'return','11x'),(0x10,'return-wide','11x'),
+    (0x11,'return-object','11x'),(0x12,'const/4','11n'),(0x13,'const/16','21s'),(0x14,'const','31i'),(0x15,'const/high16','21h'),
+    (0x16,'const-wide/16','21s'),(0x17,'const-wide/32','31i'),(0x18,'const-wide','51l'),(0x19,'const-wide/high16','21h'),
+    (0x1a,'const-string','21c'),(0x1b,'const-string/jumbo','31c'),(0x1c,'const-class','21c'),(0x1d,'monitor-enter','11x'),
+    (0x1e,'monitor-exit','11x'),(0x1f,'check-cast','21c'),(0x20,'instance-of','22c'),(0x21,'array-length','12x'),
+    (0x22,'new-instance','21c'),(0x23,'new-array','22c'),(0x24,'filled-new-array','35c'),(0x25,'filled-new-array/range','3rc'),
+    (0x26,'fill-array-data','31t'),(0x27,'throw','11x'),(0x28,'goto','10t'),(0x29,'goto/16','20t'),(0x2a,'goto/32','30t'),
+    (0x2b,'packed-switch','31t'),(0x2c,'sparse-switch','31t'),
+    (0x2d,'cmpl-float','23x'),(0x2e,'cmpg-float','23x'),(0x2f,'cmpl-double','23x'),(0x30,'cmpg-double','23x'),(0x31,'cmp-long','23x'),
+    (0x32,'if-eq','22t'),(0x33,'if-ne','22t'),(0x34,'if-lt','22t'),(0x35,'if-ge','22t'),(0x36,'if-gt','22t'),(0x37,'if-le','22t'),
+    (0x38,'if-eqz','21t'),(0x39,'if-nez','21t'),(0x3a,'if-ltz','21t'),(0x3b,'if-gez','21t'),(0x3c,'if-gtz','21t'),(0x3d,'if-lez','21t'),
+    (0x6e,'invoke-virtual','35c'),(0x6f,'invoke-super','35c'),(0x70,'invoke-direct','35c'),(0x71,'invoke-static','35c'),
+    (0x72,'invoke-interface','35c'),(0x74,'invoke-virtual/range','3rc'),(0x75,'invoke-super/range','3rc'),
+    (0x76,'invoke-direct/range','3rc'),(0x77,'invoke-static/range','3rc'),(0x78,'invoke-interface/range','3rc'),
+]: _n(op, name, fmt)
+for i, nm in enumerate(['aget','aget-wide','aget-object','aget-boolean','aget-byte','aget-char','aget-short',
+                        'aput','aput-wide','aput-object','aput-boolean','aput-byte','aput-char','aput-short']): _n(0x44+i, nm, '23x')
+for i, nm in enumerate(['iget','iget-wide','iget-object','iget-boolean','iget-byte','iget-char','iget-short',
+                        'iput','iput-wide','iput-object','iput-boolean','iput-byte','iput-char','iput-short']): _n(0x52+i, nm, '22c')
+for i, nm in enumerate(['sget','sget-wide','sget-object','sget-boolean','sget-byte','sget-char','sget-short',
+                        'sput','sput-wide','sput-object','sput-boolean','sput-byte','sput-char','sput-short']): _n(0x60+i, nm, '21c')
+for i, nm in enumerate(['neg-int','not-int','neg-long','not-long','neg-float','neg-double','int-to-long','int-to-float','int-to-double',
+                        'long-to-int','long-to-float','long-to-double','float-to-int','float-to-long','float-to-double',
+                        'double-to-int','double-to-long','double-to-float','int-to-byte','int-to-char','int-to-short']): _n(0x7b+i, nm, '12x')
+_arith = ['add','sub','mul','div','rem','and','or','xor','shl','shr','ushr']
+for i, nm in enumerate([a+'-int' for a in _arith]+[a+'-long' for a in _arith]+[a+'-float' for a in _arith[:5]]+[a+'-double' for a in _arith[:5]]):
+    _n(0x90+i, nm, '23x'); _n(0xb0+i, nm+'/2addr', '12x')
+for i, nm in enumerate(['add-int/lit16','rsub-int','mul-int/lit16','div-int/lit16','rem-int/lit16','and-int/lit16','or-int/lit16','xor-int/lit16']): _n(0xd0+i, nm, '22s')
+for i, nm in enumerate(['add-int/lit8','rsub-int/lit8','mul-int/lit8','div-int/lit8','rem-int/lit8','and-int/lit8','or-int/lit8','xor-int/lit8','shl-int/lit8','shr-int/lit8','ushr-int/lit8']): _n(0xd8+i, nm, '22b')
+
+def _s(v, bits): return v - (1 << bits) if v >= (1 << (bits-1)) else v
+
+def full_insns(d, co, lo=0, hi=1 << 30):
+    """yield (unit, text) with registers, literals, branch targets (absolute unit offsets)."""
+    b = d.b
+    import struct as _st
+    regs, ins, outs, tries, dbg, size = _st.unpack_from('<HHHHII', b, co)
+    base = co + 16
+    W16 = lambda k: _st.unpack_from('<H', b, base + 2*k)[0]
+    u = 0
+    while u < size:
+        w0 = W16(u); op = w0 & 0xff
+        if op == 0 and w0 != 0:
+            if w0 == 0x0100: n = W16(u+1); w = 4 + n*2
+            elif w0 == 0x0200: n = W16(u+1); w = 2 + n*4
+            else: ew, n = _st.unpack_from('<HI', b, base+2*u+2); w = 4 + (n*ew + 1)//2
+            if lo <= u <= hi: yield u, '.payload (%d units)' % w
+            u += w; continue
+        name, fmt = _NAMES.get(op, ('op%02x' % op, '10x'))
+        A = (w0 >> 8) & 0xff; a4 = (w0 >> 8) & 0xf; b4 = (w0 >> 12) & 0xf
+        t = ''
+        if fmt == '10x': t = name
+        elif fmt == '12x': t = '%s v%d, v%d' % (name, a4, b4)
+        elif fmt == '11n': t = '%s v%d, #%d' % (name, a4, _s(b4, 4))
+        elif fmt == '11x': t = '%s v%d' % (name, A)
+        elif fmt == '10t': t = '%s ->%04x' % (name, u + _s(A, 8))
+        elif fmt == '20t': t = '%s ->%04x' % (name, u + _s(W16(u+1), 16))
+        elif fmt == '22x': t = '%s v%d, v%d' % (name, A, W16(u+1))
+        elif fmt == '21t': t = '%s v%d, ->%04x' % (name, A, u + _s(W16(u+1), 16))
+        elif fmt == '21s': t = '%s v%d, #%d' % (name, A, _s(W16(u+1), 16))
+        elif fmt == '21h': t = '%s v%d, #%d<<16' % (name, A, _s(W16(u+1), 16))
+        elif fmt == '21c':
+            k = W16(u+1)
+            ref = d.string(k) if op in (0x1a,) else d.type(k) if op in (0x1c,0x1f,0x22) else '%s.%s:%s' % d.field(k)
+            t = '%s v%d, %s' % (name, A, repr(ref) if op == 0x1a else ref)
+        elif fmt == '23x': t = '%s v%d, v%d, v%d' % (name, A, W16(u+1) & 0xff, W16(u+1) >> 8)
+        elif fmt == '22b': t = '%s v%d, v%d, #%d' % (name, A, W16(u+1) & 0xff, _s(W16(u+1) >> 8, 8))
+        elif fmt == '22t': t = '%s v%d, v%d, ->%04x' % (name, a4, b4, u + _s(W16(u+1), 16))
+        elif fmt == '22s': t = '%s v%d, v%d, #%d' % (name, a4, b4, _s(W16(u+1), 16))
+        elif fmt == '22c':
+            k = W16(u+1)
+            ref = d.type(k) if op in (0x20, 0x23) else '%s.%s:%s' % d.field(k)
+            t = '%s v%d, v%d, %s' % (name, a4, b4, ref)
+        elif fmt == '30t': t = '%s ->%04x' % (name, u + _s(W16(u+1) | (W16(u+2) << 16), 32))
+        elif fmt == '32x': t = '%s v%d, v%d' % (name, W16(u+1), W16(u+2))
+        elif fmt == '31i': t = '%s v%d, #%d' % (name, A, _s(W16(u+1) | (W16(u+2) << 16), 32))
+        elif fmt == '31t': t = '%s v%d, payload@%04x' % (name, A, u + _s(W16(u+1) | (W16(u+2) << 16), 32))
+        elif fmt == '31c': t = '%s v%d, %r' % (name, A, d.string(W16(u+1) | (W16(u+2) << 16)))
+        elif fmt == '51l': t = '%s v%d, #%d' % (name, A, W16(u+1) | (W16(u+2)<<16) | (W16(u+3)<<32) | (W16(u+4)<<48))
+        elif fmt == '35c':
+            k = W16(u+1); w2 = W16(u+2); cnt = b4
+            rg = [w2 & 0xf, (w2 >> 4) & 0xf, (w2 >> 8) & 0xf, (w2 >> 12) & 0xf, a4][:cnt]
+            t = '%s {%s}, %s.%s%s' % (name, ', '.join('v%d' % r for r in rg), *d.method(k))
+        elif fmt == '3rc':
+            k = W16(u+1); first = W16(u+2)
+            t = '%s {v%d..v%d}, %s.%s%s' % (name, first, first + A - 1, *d.method(k))
+        if lo <= u <= hi: yield u, t
+        u += W[op]
+
 # ----------------------------------------------------------------------------------------------
 # CLI
 # ----------------------------------------------------------------------------------------------
@@ -141,6 +240,8 @@ def main(argv):
     p = sub.add_parser('class', help='fields + methods of a class'); p.add_argument('cls')
     p = sub.add_parser('dis', help='dump a class: per method register counts and referenced strings/types/fields/calls')
     p.add_argument('cls'); p.add_argument('methods', nargs='*')
+    p.add_argument('--full', action='store_true', help='full register-level listing with branch targets')
+    p.add_argument('--range', nargs=2, type=lambda x: int(x, 16), metavar=('LO', 'HI'), help='hex unit offsets, with --full')
     p = sub.add_parser('subclasses', help='classes extending / implementing a type'); p.add_argument('cls')
     a = ap.parse_args(argv)
     dexes = load_all(a.dexdir)
@@ -195,6 +296,10 @@ def main(argv):
             if not co: print('==', *m[1:], '(abstract/native)'); continue
             regs, ins, outs, tries, dbg, size = struct.unpack_from('<HHHHII', d.b, co)
             print('==', *m[1:], '| registers=%d ins=%d (p0=v%d) locals=%d tries=%d' % (regs, ins, regs - ins, regs - ins, tries))
+            if a.full:
+                lo, hi = a.range or (0, 1 << 30)
+                for u, t in full_insns(d, co, lo, hi): print('   %04x  %s' % (u, t))
+                continue
             for u, op, kind, idx, w0 in d.insns(co):
                 if kind: print('   %04x  op=%02x  %s' % (u, op, _fmt(d, kind, idx)))
 

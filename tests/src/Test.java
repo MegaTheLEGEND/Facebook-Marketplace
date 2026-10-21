@@ -31,6 +31,31 @@ public class Test {
     c=new C2GO(new C23681Hz(Arrays.asList(new X.FakeTab(FEED),new X.FakeTab(MP))));
     run(c,false); run(c,false);
     check(c.A01==1,"idempotent on repeat call");
+    // 6: blank strip. root 1080x2000; content, a short full-width bottom filler leaf, a small FAB-like leaf,
+    //    the (now GONE) bar; the root has 147px bottom padding = the bar height (read from its LayoutParams).
+    FakeView root=new FakeView(0,0,1080,2000); root.padB=147;
+    FakeView content=new FakeView(0,0,1080,1850); content.add(new FakeView(0,0,1080,500));
+    FakeView filler=new FakeView(0,1850,1080,1900);                 // 50px high, full width, bottom of content area?
+    FakeView fab=new FakeView(900,1700,1040,1840);                  // not full width
+    FakeView bar=new FakeView(0,1850,1080,1850); bar.lp.height=147;
+    root.add(content).add(fab).add(bar).add(filler);
+    filler.t=1803; filler.b=1853;                               // sits on the parent's bottom edge (2000-150 padding)
+    C2GO c6=new C2GO(new C23681Hz(Arrays.asList(new X.FakeTab(FEED),new X.FakeTab(MP))), bar);
+    c6.A01=0; c6.A02=FEED; run(c6,true);
+    check(bar.vis==8 && bar.lp.height==0,"bar GONE and 0 high");
+    check(filler.vis==8,"full-width short bottom leaf filler is hidden");
+    check(fab.vis==0 && content.vis==0,"FAB-like (not full width) and content left alone");
+    check(root.padB==0,"leftover bottom padding on bar's ancestor cleared (matches the remembered bar height)");
+    // 7: once the bar height is known, only a matching padding/margin is cleared (keeps nav-bar inset padding)
+    FakeView root2=new FakeView(0,0,1080,2000); root2.padB=63;       // e.g. gesture/nav inset, bar was 147 high
+    FakeView bar2=new FakeView(0,1853,1080,2000); // getHeight()==147 before hide
+    root2.add(new FakeView(0,0,1080,1853)).add(bar2);
+    bar2.lp.bottomMargin=147;
+    C2GO c7=new C2GO(new C23681Hz(Arrays.asList(new X.FakeTab(FEED),new X.FakeTab(MP))), bar2);
+    run(c7,true);
+    check(root2.padB==63,"padding that doesn't match the bar height is kept (nav inset)");
+    check(bar2.lp.bottomMargin==0,"bottom margin equal to bar height is cleared");
+    check(MarketplaceOnly.marketplaceHomeTabId()==1606854132932955L,"home tab id for back handling is Marketplace");
     System.out.println(fails==0?"ALL PASS":"FAILURES: "+fails); System.exit(fails==0?0:1);
   }
 }

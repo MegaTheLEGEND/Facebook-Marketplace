@@ -57,6 +57,8 @@ ARGS=(-jar "$DESK" patch -p "$BUNDLE" --exclusive -e "Marketplace only")
 [ -n "${KEEP_TAB_BAR:-}" ]   && ARGS+=("-OhideTabBar=false")      # leave the bottom tab bar visible
 [ -n "${KEEP_NAVIGATION:-}" ] && ARGS+=("-OlockNavigation=false")  # don't lock swiping / left menu
 [ -n "${KEEP_IN_APP_BROWSER:-}" ] && ARGS+=("-OexternalLinks=false") # keep Facebook's in-app WebView browser
+[ -n "${KEEP_REELS:-}" ] && ARGS+=("-OblockReels=false")           # don't block Reels / fullscreen video
+[ -n "${KEEP_HOME_BACK:-}" ] && ARGS+=("-OmarketplaceIsHome=false") # back goes to Facebook Home (stock)
 java "${ARGS[@]}" "$WORK/facebook.apk"
 
 # Morphe writes <work>/facebook/facebook-<version>-patches-<bundle>.apk; copy the newest to a stable name.

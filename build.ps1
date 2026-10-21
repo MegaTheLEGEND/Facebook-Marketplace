@@ -6,7 +6,9 @@ param(
   [string]$JavaExe = "java",          # path to a Temurin/Zulu/OpenJDK java.exe if Oracle JDK is first on PATH
   [switch]$KeepTabBar,                 # only change the startup tab; leave the bottom tab bar visible
   [switch]$KeepNavigation,             # do NOT lock swiping between tabs / the left Facebook menu
-  [switch]$KeepInAppBrowser            # do NOT force links into the system browser
+  [switch]$KeepInAppBrowser,           # do NOT force links into the system browser
+  [switch]$KeepReels,                  # do NOT block the Reels / fullscreen video viewer
+  [switch]$KeepHomeBack                # back on Marketplace goes to Facebook Home (stock behavior)
 )
 
 # Native tools (java, git, gradle) write progress to stderr. Under "Stop", Windows PowerShell
@@ -105,6 +107,8 @@ $patchArgs = @("-jar", $desk, "patch", "-p", $bundle.FullName, "--exclusive", "-
 if ($KeepTabBar) { $patchArgs += "-OhideTabBar=false" }
 if ($KeepNavigation) { $patchArgs += "-OlockNavigation=false" }
 if ($KeepInAppBrowser) { $patchArgs += "-OexternalLinks=false" }
+if ($KeepReels) { $patchArgs += "-OblockReels=false" }
+if ($KeepHomeBack) { $patchArgs += "-OmarketplaceIsHome=false" }
 $patchArgs += $workApk
 & $JavaExe @patchArgs
 if ($LASTEXITCODE -ne 0) { Fail "Patching failed (exit $LASTEXITCODE) - copy the output above and send it to Claude" }
