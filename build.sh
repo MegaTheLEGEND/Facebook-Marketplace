@@ -34,6 +34,8 @@ echo "==> Copying Marketplace-only sources in"
 mkdir -p "$P/extensions/facebook" "$P/patches/src/main/kotlin/app/morphe/patches/facebook"
 cp -r "$HERE/extensions/facebook/." "$P/extensions/facebook/"
 cp -r "$HERE/patches/src/main/kotlin/app/morphe/patches/facebook/." "$P/patches/src/main/kotlin/app/morphe/patches/facebook/"
+mkdir -p "$P/patches/src/main/resources/marketplace-icon"
+cp -r "$HERE/patches/src/main/resources/marketplace-icon/." "$P/patches/src/main/resources/marketplace-icon/"
 
 echo "==> Building patch bundle"
 ( cd "$P" && ./gradlew :patches:buildAndroid --no-daemon )
@@ -54,6 +56,8 @@ fi
 echo "==> Patching (run on a COPY; original is untouched)"
 cp "$APK" "$WORK/facebook.apk"
 ARGS=(-jar "$DESK" patch -p "$BUNDLE" --exclusive -e "Marketplace only")
+# Rename to io.focalpoint.prism / "Marketplace" (pulls in Morphe's "Clone app" patch as a dependency).
+[ -z "${KEEP_ORIGINAL_PACKAGE:-}" ] && ARGS+=(-e "Marketplace rename")   # KEEP_ORIGINAL_PACKAGE=1 keeps com.facebook.katana / "Facebook"
 [ -n "${KEEP_TAB_BAR:-}" ]   && ARGS+=("-OhideTabBar=false")      # leave the bottom tab bar visible
 [ -n "${KEEP_NAVIGATION:-}" ] && ARGS+=("-OlockNavigation=false")  # don't lock swiping / left menu
 [ -n "${KEEP_IN_APP_BROWSER:-}" ] && ARGS+=("-OexternalLinks=false") # keep Facebook's in-app WebView browser

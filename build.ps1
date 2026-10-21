@@ -8,7 +8,8 @@ param(
   [switch]$KeepNavigation,             # do NOT lock swiping between tabs / the left Facebook menu
   [switch]$KeepInAppBrowser,           # do NOT force links into the system browser
   [switch]$KeepReels,                  # do NOT block the Reels / fullscreen video viewer
-  [switch]$KeepHomeBack                # back on Marketplace goes to Facebook Home (stock behavior)
+  [switch]$KeepHomeBack,               # back on Marketplace goes to Facebook Home (stock behavior)
+  [switch]$KeepOriginalPackage         # do NOT rename: keep com.facebook.katana and the name "Facebook"
 )
 
 # Native tools (java, git, gradle) write progress to stderr. Under "Stop", Windows PowerShell
@@ -76,6 +77,9 @@ $patDst = Join-Path $P "patches\src\main\kotlin\app\morphe\patches\facebook"
 New-Item -ItemType Directory -Force $extDst, $patDst | Out-Null
 Copy-Item "$Here\extensions\facebook\*" $extDst -Recurse -Force
 Copy-Item "$Here\patches\src\main\kotlin\app\morphe\patches\facebook\*" $patDst -Recurse -Force
+$resDst = Join-Path $P "patches\src\main\resources\marketplace-icon"
+New-Item -ItemType Directory -Force $resDst | Out-Null
+Copy-Item "$Here\patches\src\main\resources\marketplace-icon\*" $resDst -Recurse -Force
 
 Write-Host "==> Building patch bundle (first run downloads a lot; this can take several minutes)"
 Push-Location $P
@@ -104,6 +108,8 @@ Write-Host "==> Patching (works on a copy; original untouched)"
 $workApk = Join-Path $Work "facebook.apk"
 Copy-Item -LiteralPath $Apk $workApk -Force
 $patchArgs = @("-jar", $desk, "patch", "-p", $bundle.FullName, "--exclusive", "-e", "Marketplace only")
+# Rename to io.focalpoint.prism / "Marketplace" (pulls in Morphe's "Clone app" patch as a dependency).
+if (-not $KeepOriginalPackage) { $patchArgs += @("-e", "Marketplace rename") }
 if ($KeepTabBar) { $patchArgs += "-OhideTabBar=false" }
 if ($KeepNavigation) { $patchArgs += "-OlockNavigation=false" }
 if ($KeepInAppBrowser) { $patchArgs += "-OexternalLinks=false" }
