@@ -1,0 +1,20 @@
+
+
+# Logs
+*.log
+
+
+work/facebook/facebook-582.0.0.50.54-patches-1.47.0.apk
+
+work/facebook.apk
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+
+# Environment variables
+.env
