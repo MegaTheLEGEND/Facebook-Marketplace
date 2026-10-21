@@ -20,6 +20,9 @@ private const val THEME_STATE = "Lcom/facebook/prefs/theme/ThemePreferences\$Sta
 private const val EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/MarketplaceOnly;"
 
+private const val GROUP_EXTENSION_CLASS =
+    "Lapp/morphe/extension/facebook/marketplace/GroupSuggestions;"
+
 internal val hideTabBarOption = booleanOption(
     key = "hideTabBar",
     default = true,
@@ -72,6 +75,14 @@ internal val forceDarkModeOption = booleanOption(
     description = "Pins Facebook's own Dark mode setting to \"On\" and makes the dark-theme decision points (is-dark check, theme application, FDS resolver) always dark, regardless of the system theme."
 )
 
+internal val blockGroupSuggestionsOption = booleanOption(
+    key = "blockGroupSuggestions",
+    default = true,
+    title = "Remove group suggestions",
+    description = "Removes the \"Recommended groups\" block on Marketplace search and the \"Related groups\" block on " +
+        "listing pages (Facebook's GYSJ units) by switching their MobileConfig flags off."
+)
+
 /**
  * Universal-style declaration (no compatibleWith): the compatibility object needs the app's
  * signing-certificate SHA-256, which isn't available from the dex files. The fingerprint
@@ -95,6 +106,7 @@ val marketplaceOnlyPatch = bytecodePatch(
     marketplaceIsHomeOption()
     returnToMarketplaceOption()
     forceDarkModeOption()
+    blockGroupSuggestionsOption()
 
     execute {
         val hideTabBar by hideTabBarOption
@@ -104,6 +116,7 @@ val marketplaceOnlyPatch = bytecodePatch(
         val marketplaceIsHome by marketplaceIsHomeOption
         val returnToMarketplace by returnToMarketplaceOption
         val forceDarkMode by forceDarkModeOption
+        val blockGroupSuggestions by blockGroupSuggestionsOption
 
         val entryPoint =
             if (hideTabBar == true) "onStartingTabDeterminedHideBar" else "onStartingTabDetermined"
@@ -271,6 +284,61 @@ val marketplaceOnlyPatch = bytecodePatch(
             ThemeIsDarkFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
             ThemeApplyFingerprint.method.addInstructions(0, "const/4 p2, 0x1")
             FdsIsDarkFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
+        }
+
+        if (blockGroupSuggestions == true) {
+            // Marketplace search / listing pages are React Native, so the group blocks can't be removed from the
+            // view tree; their MobileConfig flags can. Filter the result of every boolean getter of the RN
+            // MobileConfig module (see Fingerprints.kt for the register analysis). The filter is inserted right
+            // before the (last) `return`: the `move-result` before it has already put Facebook's value in the
+            // returned register, and the extension hands back the value to use instead. No branches needed.
+
+            // By name: `p1` (the flag name, v2) is never overwritten in these two methods.
+            listOf(
+                MobileConfigGetBoolFingerprint,
+                MobileConfigGetBoolWithoutLoggingFingerprint
+            ).forEach { fingerprint ->
+                fingerprint.method.apply {
+                    val returnIndex = implementation!!.instructions.indexOfLast { it.opcode == Opcode.RETURN }
+                    check(returnIndex > 0) { "No return found in ${fingerprint.method.name}" }
+                    val result = (implementation!!.instructions.elementAt(returnIndex) as OneRegisterInstruction).registerA
+                    addInstructions(
+                        returnIndex,
+                        """
+                            invoke-static { p1, v$result }, $GROUP_EXTENSION_CLASS->filterBoolByName(Ljava/lang/String;Z)Z
+                            move-result v$result
+                        """
+                    )
+                }
+            }
+
+            // By spec: the first `move-result-wide` is the packed specifier from `MobileConfigNativeModule.A00(DD)J`.
+            // Its register pair is only read afterwards, so it is still intact at the last `return`.
+            listOf(
+                MobileConfigGetBoolForStableSpecFingerprint,
+                MobileConfigGetBoolWithoutLoggingForStableSpecFingerprint,
+                MobileConfigGetBoolWithContextualIdFingerprint,
+                MobileConfigGetBoolWithoutLoggingWithContextualIdFingerprint
+            ).forEach { fingerprint ->
+                fingerprint.method.apply {
+                    val instructions = implementation!!.instructions
+                    val specIndex = instructions.indexOfFirst { it.opcode == Opcode.MOVE_RESULT_WIDE }
+                    check(specIndex >= 0) { "Specifier (move-result-wide) not found in ${fingerprint.method.name}" }
+                    val specRegister = (instructions.elementAt(specIndex) as OneRegisterInstruction).registerA
+
+                    val returnIndex = instructions.indexOfLast { it.opcode == Opcode.RETURN }
+                    check(returnIndex > specIndex) { "No return after the specifier in ${fingerprint.method.name}" }
+                    val result = (instructions.elementAt(returnIndex) as OneRegisterInstruction).registerA
+
+                    addInstructions(
+                        returnIndex,
+                        """
+                            invoke-static { v$specRegister, v${specRegister + 1}, v$result }, $GROUP_EXTENSION_CLASS->filterBoolBySpec(JZ)Z
+                            move-result v$result
+                        """
+                    )
+                }
+            }
         }
     }
 }

@@ -274,3 +274,79 @@ internal object FdsIsDarkFingerprint : Fingerprint(
     parameters = listOf("Landroid/content/Context;")
 )
 
+
+// ---------------------------------------------------------------------------------------------
+// Group suggestions ("Recommended groups" on Marketplace search, "Related groups" on a listing page).
+//
+// Both screens are React Native (routes MarketplaceSearchRoute / MarketplaceSearchHubRoute and
+// MarketplaceProductDetailsNonIPadRoute in assets/react_native_routes.json); the sections are drawn by JS in the
+// Hermes bundle (assets/Fb4aBundle.js.hbc.spo), which is not patchable. Facebook calls the unit GYSJ ("Groups You
+// Should Join"). The JS decides what to render from MobileConfig flags, read through the Java RN module
+// `com.facebook.catalyst.modules.mobileconfignative.MobileConfigNativeModule` (`X.gjH` subclass, dex 6). Flags that
+// matter, all in assets/ReactMobileConfigMetadata.json (specifiers in assets/rn_params.txt / rn_params_u4.txt):
+//   mp_pathing_lth:disable_mp_search_nullstate_gysj   Facebook's own kill switch for the search null state block
+//   groups_yakima_gysj:enable_gysj_unit_rendering     GYSJ units in Marketplace's Yakima feed framework (default TRUE)
+//   mp_serp_h1_2026:*groups_insights*                 groups module on search results
+//   group_discussion_mp_pdp:* / group_discussion_mp_feed:*   group discussion modules on listing page / feed
+// The patch filters the boolean result of the six getBool* methods. Read paths (all checked in the dex):
+//   by name:  getBool(String) / getBoolWithoutLogging(String)  ->  `X.82q.A0I(1Ed, name)Z`, then `move-result v0;
+//             return v0`. v2 (= p1, the name) is never written, so it is still the name at the return.
+//   by spec:  getBool{,WithoutLogging}ForStableSpec(DD) and ...WithContextualId(DDString): `MobileConfigNativeModule.A00(DD)J`
+//             packs `(long)lo | (long)hi << 32` into a wide register pair (v2:v3, or v3:v4 for the contextual
+//             ones), which is only read afterwards, so it is still the spec at the final `return`.
+// A spec is the hex number in rn_params*.txt; those of default-true flags carry a 0x20 marker in the top byte.
+// ---------------------------------------------------------------------------------------------
+
+private const val MOBILE_CONFIG_MODULE =
+    "Lcom/facebook/catalyst/modules/mobileconfignative/MobileConfigNativeModule;"
+
+/** `getBool(String)Z`: 3 registers, v0 = result, v1 = scratch (was `this`), p1 = v2 = the flag name. */
+internal object MobileConfigGetBoolFingerprint : Fingerprint(
+    definingClass = MOBILE_CONFIG_MODULE,
+    name = "getBool",
+    returnType = "Z",
+    parameters = listOf("Ljava/lang/String;")
+)
+
+/** `getBoolWithoutLogging(String)Z`: same shape as [MobileConfigGetBoolFingerprint]. */
+internal object MobileConfigGetBoolWithoutLoggingFingerprint : Fingerprint(
+    definingClass = MOBILE_CONFIG_MODULE,
+    name = "getBoolWithoutLogging",
+    returnType = "Z",
+    parameters = listOf("Ljava/lang/String;")
+)
+
+/** `getBoolForStableSpec(DD)Z`: 5 registers, no locals; `move-result-wide v2` = spec in v2:v3, result in v0. */
+internal object MobileConfigGetBoolForStableSpecFingerprint : Fingerprint(
+    definingClass = MOBILE_CONFIG_MODULE,
+    name = "getBoolForStableSpec",
+    returnType = "Z",
+    parameters = listOf("D", "D")
+)
+
+/** `getBoolWithoutLoggingForStableSpec(DD)Z`: same shape as [MobileConfigGetBoolForStableSpecFingerprint]. */
+internal object MobileConfigGetBoolWithoutLoggingForStableSpecFingerprint : Fingerprint(
+    definingClass = MOBILE_CONFIG_MODULE,
+    name = "getBoolWithoutLoggingForStableSpec",
+    returnType = "Z",
+    parameters = listOf("D", "D")
+)
+
+/**
+ * `getBoolWithContextualId(DDString)Z`: 8 registers; `move-result-wide v3` = spec in v3:v4 (never written again);
+ * two `return`s, the early one (`return v1`, spec <= 0) is left alone, the filter goes before the last one.
+ */
+internal object MobileConfigGetBoolWithContextualIdFingerprint : Fingerprint(
+    definingClass = MOBILE_CONFIG_MODULE,
+    name = "getBoolWithContextualId",
+    returnType = "Z",
+    parameters = listOf("D", "D", "Ljava/lang/String;")
+)
+
+/** `getBoolWithoutLoggingWithContextualId(DDString)Z`: same shape as [MobileConfigGetBoolWithContextualIdFingerprint]. */
+internal object MobileConfigGetBoolWithoutLoggingWithContextualIdFingerprint : Fingerprint(
+    definingClass = MOBILE_CONFIG_MODULE,
+    name = "getBoolWithoutLoggingWithContextualId",
+    returnType = "Z",
+    parameters = listOf("D", "D", "Ljava/lang/String;")
+)

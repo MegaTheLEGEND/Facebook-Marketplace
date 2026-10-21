@@ -38,6 +38,7 @@ See [TODO.md](TODO.md) for what's next.
 | Blank strip where the tab bar was | Reclaim logic written, unit-tested on a JVM with fake views, **not yet tested on device** |
 | Return to Marketplace after a long absence | Written from the dex (`X.2FU.A06` index redirect, unit-tested on a JVM), **not yet tested on device** |
 | Always dark mode | Written from the dex (pins Facebook's own `ThemePreferences$State` to ON), **not yet tested on device** |
+| Remove group suggestions ("Recommended groups" on search, "Related groups" on a listing) | Written from the dex + the APK's MobileConfig metadata (React Native screens, so the group modules are switched off through their flags, `GroupSuggestions.java`), unit-tested on a JVM, **not yet tested on device** |
 | Navigation lock | **Works on device**: app launches, swipe and the side menu are blocked. The hamburger icon is still drawn (see TODO) |
 | Extension logic | Unit-tested on a plain JVM (`tests/`) |
 | Rename to `io.focalpoint.prism` / "Marketplace" + storefront icon | **Works on device** (builds, installs next to stock Facebook, launches) |
@@ -96,7 +97,7 @@ adb logcat | findstr /i "AndroidRuntime VerifyError katana prism"
 
 ```
 patches/     Kotlin: fingerprints + the "Marketplace only" patch + the "Marketplace rename" patch
-extensions/  Java: runtime logic injected into the app (MarketplaceOnly)
+extensions/  Java: runtime logic injected into the app (MarketplaceOnly, GroupSuggestions)
 tests/       Plain-JVM unit tests for the extension (mock class shapes)
 tools/       dexscan.py - find strings, callers, classes in the app's dex files
 tools/icon/  preview.webp (source icon) + make_icon.py, which regenerates patches/src/main/resources/marketplace-icon/
@@ -106,7 +107,7 @@ build.ps1 / build.sh
 
 ### Unit tests
 ```
-cd tests && javac -d out $(find src -name '*.java') ../extensions/facebook/src/main/java/app/morphe/extension/facebook/marketplace/MarketplaceOnly.java && java -cp out Test
+cd tests && javac -d out $(find src -name '*.java') ../extensions/facebook/src/main/java/app/morphe/extension/facebook/marketplace/*.java && java -cp out Test && java -cp out GroupSuggestionsTest
 ```
 
 ### Finding things in a new build (`tools/dexscan.py`)
