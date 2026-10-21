@@ -9,6 +9,7 @@ work/
 *.dex
 *.keystore
 *.jks
+*.zip
 
 # Local test build output
 tests/out/

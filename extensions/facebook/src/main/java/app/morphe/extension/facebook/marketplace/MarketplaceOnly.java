@@ -44,6 +44,37 @@ public final class MarketplaceOnly {
     }
 
     /**
+     * The tab pager controller (X.2FU) captured at the start of its tab-select method. Held weakly so
+     * the patch never keeps an activity alive.
+     */
+    private static volatile WeakReference<Object> pager;
+
+    /** Injected at the very start of X.2FU.A06(Intent, Bundle, 2Vz, String, int) (p0 = the controller). */
+    public static void capturePager(Object pagerController) {
+        pager = new WeakReference<>(pagerController);
+    }
+
+    /**
+     * Injected right after {@link #capturePager}: every tab switch (Facebook's "reset to feed after being
+     * in the background" routine, new intents, back handling, deep links) goes through X.2FU.A06 with a
+     * tab INDEX. Whatever tab was asked for, answer with Marketplace's index instead. The index is
+     * looked up by tab id via the controller's own {@code A04(long) -> Integer}. Any problem (Marketplace
+     * not among this account's tabs, controller not ready, reflection mismatch) returns the original
+     * index, so Facebook behaves normally instead of breaking.
+     */
+    public static int redirectTabIndex(int requested) {
+        try {
+            WeakReference<Object> ref = pager;
+            Object controller = ref == null ? null : ref.get();
+            if (controller == null) return requested;
+            Object index = findMethod(controller.getClass(), "A04", long.class).invoke(controller, MARKETPLACE_TAB_ID);
+            return index instanceof Integer ? (Integer) index : requested;
+        } catch (Throwable ignored) {
+            return requested;
+        }
+    }
+
+    /**
      * The tab controller captured at method entry. Facebook's A06 reuses its "this" register
      * (v27) as scratch space, so by the time it reaches return-void that register holds a
      * different type on different paths and the ART verifier rejects any read of it

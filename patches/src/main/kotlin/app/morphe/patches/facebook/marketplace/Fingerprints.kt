@@ -179,3 +179,98 @@ internal object BackPressedFingerprint : Fingerprint(
     returnType = "Z",
     parameters = listOf("J")
 )
+
+// ---------------------------------------------------------------------------------------------
+// Returning to the app after a while ("reset to feed in background")
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `X.2FU.A06(Intent, Bundle, X.2Vz, String, int index)`: the single choke point every tab switch goes
+ * through (verified callers: `X.23K.A0T`, `X.2GO.A05/A0I`, `FbMainTabActivityDelegate.setSelectedTab` /
+ * `onBackPressedInternal`, and two runnables). Facebook's return-to-feed routine
+ * (`X.2Nb.A03` -> `X.23K.A0T(feedTabId, ...)`, log key `reset_to_feed_in_background`, pref
+ * `r2f_force_feed_destination`) ends up here with the Feed tab's index when you come back after being
+ * away. 22 registers: p0 = v16 ... p5 (index) = v21, all valid at entry. Unique in 2FU.
+ */
+internal object TabPagerSelectFingerprint : Fingerprint(
+    definingClass = "LX/2FU;",
+    name = "A06",
+    returnType = "V",
+    parameters = listOf(
+        "Landroid/content/Intent;",
+        "Landroid/os/Bundle;",
+        "LX/2Vz;",
+        "Ljava/lang/String;",
+        "I"
+    )
+)
+
+// ---------------------------------------------------------------------------------------------
+// Dark mode (Facebook's own "Dark mode" setting)
+// ---------------------------------------------------------------------------------------------
+// `X.1Mi` is the theme manager. Its field `A00` is a `com.facebook.prefs.theme.ThemePreferences$State`
+// enum: `A03` = ON (state int 1), `A02` = OFF (2), `A04` = SYSTEM (3). The setting is stored in two
+// prefs keys (`dark_mode_v3` / `app_level_dark_mode_setting`), and ONLY `X.1Mi` reads or writes them
+// (checked: the only `sget` of `X.1Mz.A02` / `X.1Mz.A1w` are in `1Mi.<init>` and `1Mi.A04`).
+// Every activity decides light vs dark through `X.1Mi.A05()Z` (e.g. `onApplyThemeResource` calls it and
+// applies style 0x7f.. accordingly). For the main app (`X.02z.A03` = FB4A) `A05` returns
+// `A00 == ON` (or follows the OS theme when `A00 == SYSTEM`), so pinning `A00` to ON is the same as
+// the user picking "On" in Facebook's own settings; nothing else needs touching, and with `A00` no
+// longer SYSTEM the OS-theme-change recreate logic in `1Mi.A03` / `1PB` stays idle.
+
+/**
+ * `X.1Mi.<init>(FbUserSession)`: reads the saved setting and stores the matching State enum into
+ * `A00`. There are three `iput-object A00` in it (one inline, two out-of-line arms), each storing a
+ * State constant that is already in a register; the patch loads `State.ON` into that same register
+ * just before each store.
+ */
+internal object ThemeManagerInitFingerprint : Fingerprint(
+    definingClass = "LX/1Mi;",
+    name = "<init>",
+    parameters = listOf("Lcom/facebook/auth/usersession/FbUserSession;")
+)
+
+/**
+ * `X.1Mi.A04(State)V`: the setter the settings screen calls. Saves the state int to both prefs keys,
+ * stores it in `A00`, then fires a change callback. 8 registers: p0 = v6, p1 (the State) = v7.
+ */
+internal object ThemeManagerSetStateFingerprint : Fingerprint(
+    definingClass = "LX/1Mi;",
+    name = "A04",
+    returnType = "V",
+    parameters = listOf("Lcom/facebook/prefs/theme/ThemePreferences\$State;")
+)
+
+// Making the decision unconditional (first attempt, setting pinned to ON only, was not enough on device).
+// Reading `X.1Mi.A05()` with real jump targets: for FB4A the ON arm still has to pass `A02` (the
+// "can use dark mode" flag) and is skipped entirely by the end-to-end-test branch, and the per-activity
+// `getThemeMode()` (`X.1Of`: DEFAULT / FORCE_DARK / FORCE_LIGHT, ordinal 0/1/2) can force light in
+// `X.fvr.onApplyThemeResource`, which then calls `X.1Mi.A03(theme, isDark)` with `false`.
+// `A03` applies style 0x7f1... `2132804140` (dark overlay) when `isDark`, else `2132804145` (light).
+// FDS / Litho components decide separately through `X.25R.A02(Context)`, which reads a boolean attribute
+// of the context's theme (cached per Theme), or the explicit flag of an `X.2F0` context wrapper.
+
+/** `X.1Mi.A05()Z` = "is dark mode?". 3 registers: v0/v1 free locals, p0 = v2. */
+internal object ThemeIsDarkFingerprint : Fingerprint(
+    definingClass = "LX/1Mi;",
+    name = "A05",
+    returnType = "Z",
+    parameters = listOf()
+)
+
+/** `X.1Mi.A03(Theme, boolean isDark)V` applies the dark or light style. 6 registers: p0 = v3, p1 = v4, p2 = v5. */
+internal object ThemeApplyFingerprint : Fingerprint(
+    definingClass = "LX/1Mi;",
+    name = "A03",
+    returnType = "V",
+    parameters = listOf("Landroid/content/res/Resources\$Theme;", "Z")
+)
+
+/** `X.25R.A02(Context)Z` (static) = the FDS theme resolver's "is dark?". 7 registers: v0..v5 free, p0 = v6. */
+internal object FdsIsDarkFingerprint : Fingerprint(
+    definingClass = "LX/25R;",
+    name = "A02",
+    returnType = "Z",
+    parameters = listOf("Landroid/content/Context;")
+)
+

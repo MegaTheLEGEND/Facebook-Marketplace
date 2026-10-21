@@ -18,6 +18,8 @@ Not affiliated with Meta. For personal use; don't commit or redistribute Faceboo
 | Blocks Reels / fullscreen video viewer | `blockReels` (on) | The launch chain `X.7rP.A01` -> `X.4Ok.A0C` -> `X.4Ok.A0B` -> `X.4Ok.A03` -> `ImmersiveActivity` (traced from a real logcat of tapping a profile reel) is cut: `7rP.A01`/`4Ok.A0A`/`4Ok.A03` return immediately, `4Ok.A0B` claims "handled" so callers don't fall back to the legacy player. `ImmersiveActivity` itself is NOT blocked, it hosts every full-screen surface incl. Marketplace item pages. |
 | Reclaims the tab bar's space | part of `hideTabBar` | After hiding the bar the extension keeps it 0 high, hides full-width filler views on the bottom edge and clears bottom padding/margin equal to the bar's old height (a few passes over the first 3 s). Logs the view tree under tag `MarketplaceOnly`. |
 | Back leaves the app | `marketplaceIsHome` (on) | In `onBackPressedInternal` the "home tab id" read from `X.1Hz.A02()` is replaced with Marketplace's id, so with nothing left to pop, back exits instead of switching to the Feed. |
+| Returning after a while stays on Marketplace | `returnToMarketplace` (on) | Every tab switch goes through `X.2FU.A06(..., int index)`, including Facebook's "reset to feed in background" routine (`X.2Nb.A03` -> `X.23K.A0T`). The patch replaces the requested index with Marketplace's (looked up by tab id), so the reset lands on Marketplace instead of the Feed. |
+| Always dark mode | `forceDarkMode` (on) | Facebook's own Dark mode setting is `X.1Mi.A00` (`ThemePreferences$State`: ON / OFF / SYSTEM), read by `X.1Mi.A05()` ("is dark?", called by every activity's theme setup). The patch loads `State.ON` before each store to `A00` in the `X.1Mi` constructor and replaces the argument of the setter `X.1Mi.A04(State)`, i.e. the same as choosing "On" in Facebook's settings, so the system theme is ignored. Because that alone wasn't enough on a device, the three decision points are also made unconditional: `X.1Mi.A05()` ("is dark?") returns true, `X.1Mi.A03(theme, isDark)` always applies the dark style, and the FDS/Litho resolver `X.25R.A02(Context)` returns true. |
 
 If Marketplace isn't in the account's tab list, or a lookup fails, the extension does nothing and Facebook opens normally.
 
@@ -33,6 +35,8 @@ See [TODO.md](TODO.md) for what's next.
 | Block Reels | **Works on device** (reels don't start, no audio) |
 | Back leaves the app | Written from the dex (exactly one `1Hz.A02()` call in the method, same-size swap), **not yet tested on device** |
 | Blank strip where the tab bar was | Reclaim logic written, unit-tested on a JVM with fake views, **not yet tested on device** |
+| Return to Marketplace after a long absence | Written from the dex (`X.2FU.A06` index redirect, unit-tested on a JVM), **not yet tested on device** |
+| Always dark mode | Written from the dex (pins Facebook's own `ThemePreferences$State` to ON), **not yet tested on device** |
 | Navigation lock | **Works on device**: app launches, swipe and the side menu are blocked. The hamburger icon is still drawn (see TODO) |
 | Extension logic | Unit-tested on a plain JVM (`tests/`) |
 
@@ -42,6 +46,21 @@ Known limits:
 - Notification taps and deep links can still open other screens (a `fb://reel/...` link may land on a blank loading screen instead of a reel).
 - Blocking the Reels viewer blocks Facebook's fullscreen video viewer generally, so a Marketplace listing video can't be opened full-screen either (inline playback is untouched).
 - No `compatibleWith` (the signing-cert hash isn't in the dex), so Morphe treats it as a universal patch; the fingerprints stop it patching the wrong thing.
+
+## Document the bytecode for future agents
+
+This patch only works because of reverse-engineered facts about Facebook's obfuscated bytecode, and those names change every build. **Whenever you find or rely on a piece of bytecode, write it down** so the next person or agent doesn't have to re-derive it from a 150 MB APK. Put it next to the code that uses it, in the KDoc above the fingerprint in `Fingerprints.kt` (and in a code comment where the patch edits it), and summarise the behaviour in the table above and in `TODO.md`.
+
+For each class or method you touch, record:
+
+- **Where:** the obfuscated name (`X.1Mi.A05()Z`) and, where known, what it really is (theme manager, "is dark mode?").
+- **What it does and why it matters:** the behaviour in one or two sentences, including the values that matter (enum constants and their ints, tab ids, pref keys, log strings).
+- **Register layout at the edit point:** how many registers, which are parameters (`p0 = v16`), which are free locals, and which are reused as scratch (the `A06` `v27` `VerifyError` came from skipping this).
+- **How it was found and checked:** the log line, string or caller chain that led to it, and how you confirmed it (for example "only caller", "occurs exactly once in all 21 dex files", "only reads of this pref key").
+- **What the patch changes and what it deliberately leaves alone,** plus anything unverified.
+- **Version:** these notes are for `582.0.0.50.54`; say so, so they can be re-checked on a new build.
+
+Prefer anchoring fingerprints on strings and signatures over obfuscated names where possible, and write down the string you used. Use `tools/dexscan.py` (see below) to produce the facts, then commit the notes with the patch, not afterwards.
 
 ## Build
 

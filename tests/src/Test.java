@@ -56,6 +56,19 @@ public class Test {
     check(root2.padB==63,"padding that doesn't match the bar height is kept (nav inset)");
     check(bar2.lp.bottomMargin==0,"bottom margin equal to bar height is cleared");
     check(MarketplaceOnly.marketplaceHomeTabId()==1606854132932955L,"home tab id for back handling is Marketplace");
+    // 8: return-to-app redirect: any requested tab index becomes Marketplace's index
+    MarketplaceOnly.capturePager(new X.FakePager(FEED,11L,MP,22L));
+    check(MarketplaceOnly.redirectTabIndex(0)==2,"Feed index (0) redirected to Marketplace index (2)");
+    check(MarketplaceOnly.redirectTabIndex(3)==2,"another tab redirected to Marketplace");
+    check(MarketplaceOnly.redirectTabIndex(2)==2,"Marketplace stays Marketplace");
+    MarketplaceOnly.capturePager(new X.FakePager(FEED,11L));
+    check(MarketplaceOnly.redirectTabIndex(1)==1,"Marketplace absent: requested index untouched");
+    X.FakePager bad=new X.FakePager(FEED,MP); bad.throwing=true; MarketplaceOnly.capturePager(bad);
+    check(MarketplaceOnly.redirectTabIndex(0)==0,"controller not ready (A04 throws): requested index untouched");
+    MarketplaceOnly.capturePager(null);
+    check(MarketplaceOnly.redirectTabIndex(5)==5,"no controller captured: requested index untouched");
+    MarketplaceOnly.capturePager(new Object());
+    check(MarketplaceOnly.redirectTabIndex(4)==4,"wrong object (no A04): requested index untouched");
     System.out.println(fails==0?"ALL PASS":"FAILURES: "+fails); System.exit(fails==0?0:1);
   }
 }

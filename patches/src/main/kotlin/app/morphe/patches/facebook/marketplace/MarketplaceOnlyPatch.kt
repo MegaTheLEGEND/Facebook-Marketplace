@@ -8,10 +8,14 @@ import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMuta
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
+
+private const val THEME_STATE = "Lcom/facebook/prefs/theme/ThemePreferences\$State;"
 
 private const val EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/MarketplaceOnly;"
@@ -53,6 +57,21 @@ internal val marketplaceIsHomeOption = booleanOption(
     description = "Back on Marketplace's root leaves the app instead of jumping to the Facebook Home feed."
 )
 
+internal val returnToMarketplaceOption = booleanOption(
+    key = "returnToMarketplace",
+    default = true,
+    title = "Never switch away from Marketplace",
+    description = "Redirects every tab switch to Marketplace, including Facebook's \"return to Home feed " +
+        "after being away\" reset, so coming back to the app after a long time still shows Marketplace."
+)
+
+internal val forceDarkModeOption = booleanOption(
+    key = "forceDarkMode",
+    default = true,
+    title = "Always use dark mode",
+    description = "Pins Facebook's own Dark mode setting to \"On\" and makes the dark-theme decision points (is-dark check, theme application, FDS resolver) always dark, regardless of the system theme."
+)
+
 /**
  * Universal-style declaration (no compatibleWith): the compatibility object needs the app's
  * signing-certificate SHA-256, which isn't available from the dex files. The fingerprint
@@ -74,6 +93,8 @@ val marketplaceOnlyPatch = bytecodePatch(
     externalLinksOption()
     blockReelsOption()
     marketplaceIsHomeOption()
+    returnToMarketplaceOption()
+    forceDarkModeOption()
 
     execute {
         val hideTabBar by hideTabBarOption
@@ -81,6 +102,8 @@ val marketplaceOnlyPatch = bytecodePatch(
         val externalLinks by externalLinksOption
         val blockReels by blockReelsOption
         val marketplaceIsHome by marketplaceIsHomeOption
+        val returnToMarketplace by returnToMarketplaceOption
+        val forceDarkMode by forceDarkModeOption
 
         val entryPoint =
             if (hideTabBar == true) "onStartingTabDeterminedHideBar" else "onStartingTabDetermined"
@@ -190,6 +213,64 @@ val marketplaceOnlyPatch = bytecodePatch(
                 check(index >= 0) { "1Hz.A02() call not found in onBackPressedInternal" }
                 replaceInstruction(index, "invoke-static {}, $EXTENSION_CLASS->marketplaceHomeTabId()J")
             }
+        }
+
+        if (returnToMarketplace == true) {
+            // X.2FU.A06 is where every tab switch lands, with the target tab's INDEX in p5 (v21).
+            // Hand p0 (the controller) to the extension, then replace p5 with Marketplace's index.
+            // /range because p0 = v16 and p5 = v21 don't fit plain invoke-static's 4-bit registers.
+            // Both are valid at method entry (they are parameters), unlike registers Facebook reuses
+            // as scratch later in the method.
+            TabPagerSelectFingerprint.method.addInstructions(
+                0,
+                """
+                    invoke-static/range { p0 .. p0 }, $EXTENSION_CLASS->capturePager(Ljava/lang/Object;)V
+                    invoke-static/range { p5 .. p5 }, $EXTENSION_CLASS->redirectTabIndex(I)I
+                    move-result p5
+                """
+            )
+        }
+
+        if (forceDarkMode == true) {
+            // Facebook's own Dark mode setting is X.1Mi.A00 (ThemePreferences$State: A03 = ON, A02 = OFF,
+            // A04 = SYSTEM); X.1Mi.A05() ("is dark?") and the theme application read it. Pin it to ON in
+            // both places it can be set. See Fingerprints.kt for how this was traced.
+            val stateOn = "$THEME_STATE->A03:$THEME_STATE"
+
+            // Constructor: before every `iput-object A00` load State.ON into the register being stored.
+            // Done from the last match to the first so earlier indices stay valid.
+            ThemeManagerInitFingerprint.method.apply {
+                val stores = implementation!!.instructions
+                    .withIndex()
+                    .filter { (_, instruction) ->
+                        val reference = (instruction as? ReferenceInstruction)?.reference as? FieldReference
+                        instruction.opcode == Opcode.IPUT_OBJECT &&
+                            reference != null &&
+                            reference.definingClass == "LX/1Mi;" &&
+                            reference.name == "A00"
+                    }
+                    .map { (index, instruction) -> index to (instruction as OneRegisterInstruction).registerA }
+                    .reversed()
+
+                check(stores.isNotEmpty()) { "No store to X.1Mi.A00 found in the theme manager constructor" }
+
+                stores.forEach { (index, register) ->
+                    addInstructions(index, "sget-object v$register, $stateOn")
+                }
+            }
+
+            // Setter: whatever State the settings screen passes in, save and apply ON. p1 is the State
+            // parameter (v7); loading it with a State constant is type-safe.
+            ThemeManagerSetStateFingerprint.method.addInstructions(0, "sget-object p1, $stateOn")
+
+            // Pinning the setting wasn't enough on its own (A05 also needs the "can use dark mode" flag and
+            // an activity can force light), so also make the three decision points unconditional:
+            //   1Mi.A05()        "is dark?"            -> true
+            //   1Mi.A03(theme,Z) apply dark/light style -> always the dark style (p2 = v5 = true)
+            //   25R.A02(Context) FDS / Litho "is dark?" -> true
+            ThemeIsDarkFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
+            ThemeApplyFingerprint.method.addInstructions(0, "const/4 p2, 0x1")
+            FdsIsDarkFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
         }
     }
 }
