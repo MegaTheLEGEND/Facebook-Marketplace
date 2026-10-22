@@ -16,7 +16,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="$HERE/work"; mkdir -p "$WORK"
 
 command -v java >/dev/null || { echo "Java 21+ not found"; exit 1; }
-command -v git  >/dev/null || { echo "git not found"; exit 1; }
 JV=$(java -version 2>&1 | head -1 | sed -E 's/.*"([0-9]+).*/\1/')
 [ "${JV:-0}" -ge 21 ] || { echo "Java 21+ required (found $JV)"; exit 1; }
 
@@ -25,26 +24,7 @@ JV=$(java -version 2>&1 | head -1 | sed -E 's/.*"([0-9]+).*/\1/')
 : "${GITHUB_ACTOR:?Set GITHUB_ACTOR to your GitHub username}"
 : "${GITHUB_TOKEN:?Set GITHUB_TOKEN to a token with read:packages}"
 
-echo "==> Fetching morphe-patches template"
-if [ -d "$WORK/morphe-patches/.git" ]; then
-  git -C "$WORK/morphe-patches" pull --ff-only
-else
-  git clone --depth 1 https://github.com/MorpheApp/morphe-patches.git "$WORK/morphe-patches"
-fi
-P="$WORK/morphe-patches"
-
-echo "==> Copying Marketplace-only sources in"
-mkdir -p "$P/extensions/facebook" "$P/patches/src/main/kotlin/app/morphe/patches/facebook"
-cp -r "$HERE/extensions/facebook/." "$P/extensions/facebook/"
-cp -r "$HERE/patches/src/main/kotlin/app/morphe/patches/facebook/." "$P/patches/src/main/kotlin/app/morphe/patches/facebook/"
-mkdir -p "$P/patches/src/main/resources/marketplace-icon"
-cp -r "$HERE/patches/src/main/resources/marketplace-icon/." "$P/patches/src/main/resources/marketplace-icon/"
-# Facebook-only bundle: drop every other app's patches and the universal ones.
-K="$P/patches/src/main/kotlin/app/morphe/patches"
-rm -rf "$K"/youtube "$K"/music "$K"/reddit "$K"/shared "$K"/util "$P"/patches/src/test
-for d in debugging installer network resources signature updates; do rm -rf "$K/all/misc/$d"; done
-find "$P/patches/src/main/resources" -mindepth 1 -maxdepth 1 ! -name marketplace-icon -exec rm -rf {} +
-rm -rf "$P"/extensions/youtube "$P"/extensions/music "$P"/extensions/reddit "$P"/extensions/shared "$P"/extensions/shared-youtube
+P="$HERE"   # standalone Gradle project
 
 echo "==> Building patch bundle"
 ( cd "$P" && ./gradlew :patches:buildAndroid --no-daemon )

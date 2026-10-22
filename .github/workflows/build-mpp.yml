@@ -3,7 +3,7 @@ name: Build .mpp
 on:
   push:
     branches: [main, master]
-    paths: ["patches/**", "extensions/**", ".github/workflows/build-mpp.yml"]
+    paths: ["patches/**", "extensions/**", "gradle/**", "*.kts", ".github/workflows/build-mpp.yml"]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -40,26 +40,10 @@ jobs:
           sed -i "s|VERSION = \"[^\"]*\"|VERSION = \"$V\"|" extensions/facebook/src/main/java/app/morphe/extension/facebook/about/BuildInfo.java
           grep VERSION extensions/facebook/src/main/java/app/morphe/extension/facebook/about/BuildInfo.java
 
-      - name: Fetch morphe-patches template
-        run: git clone --depth 1 https://github.com/MorpheApp/morphe-patches.git work/morphe-patches
-
-      - name: Copy our sources in, drop everything else
-        run: |
-          P=work/morphe-patches
-          mkdir -p $P/extensions/facebook $P/patches/src/main/kotlin/app/morphe/patches/facebook $P/patches/src/main/resources/marketplace-icon
-          cp -r extensions/facebook/. $P/extensions/facebook/
-          cp -r patches/src/main/kotlin/app/morphe/patches/facebook/. $P/patches/src/main/kotlin/app/morphe/patches/facebook/
-          cp -r patches/src/main/resources/marketplace-icon/. $P/patches/src/main/resources/marketplace-icon/
-          # Facebook-only bundle: drop every other app's patches and the universal ones.
-          K=$P/patches/src/main/kotlin/app/morphe/patches
-          rm -rf $K/youtube $K/music $K/reddit $K/shared $K/util $P/patches/src/test
-          for d in debugging installer network resources signature updates; do rm -rf $K/all/misc/$d; done
-          find $P/patches/src/main/resources -mindepth 1 -maxdepth 1 ! -name marketplace-icon -exec rm -rf {} +
-          rm -rf $P/extensions/youtube $P/extensions/music $P/extensions/reddit $P/extensions/shared $P/extensions/shared-youtube
-
       - name: Build patch bundle
-        working-directory: work/morphe-patches
         env:
+          # If the built-in token can't read Morphe's packages, add a repo secret GPR_TOKEN
+          # (classic PAT, read:packages only) and it will be used instead.
           GPR_USER: ${{ github.actor }}
           GPR_KEY: ${{ secrets.GPR_TOKEN || secrets.GITHUB_TOKEN }}
         run: ./gradlew :patches:buildAndroid --no-daemon -Pversion="$VERSION" -Pgpr.user="$GPR_USER" -Pgpr.key="$GPR_KEY"
@@ -67,7 +51,7 @@ jobs:
       - name: Collect .mpp
         run: |
           mkdir -p dist
-          f=$(ls -t work/morphe-patches/patches/build/libs/patches-*.mpp | head -1)
+          f=$(ls -t patches/build/libs/patches-*.mpp | head -1)
           cp "$f" "dist/marketplace-patches-$VERSION.mpp"
 
       - uses: actions/upload-artifact@v4
@@ -85,7 +69,7 @@ jobs:
             --notes "Morphe patch bundle for Facebook 582.0.0.50.54. Import the .mpp into Morphe." \
             --target "$GITHUB_SHA"
 
-      - name: Update patches-bundle.json (lets Morphe add this repo by URL)
+      - name: Update patches-bundle.json + patches-list.json (lets Morphe add this repo by URL)
         if: github.event_name == 'workflow_dispatch'
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -102,12 +86,13 @@ jobs:
             "version": v,
           }, open("patches-bundle.json", "w"), indent=2)
           PY
+          python3 tools/gen_patches_list.py "$VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin "$DEFAULT_BRANCH"
           git checkout -B "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
-          git add patches-bundle.json 2>/dev/null || true
-          git commit -m "Update patches-bundle.json for v$VERSION" || echo "nothing to commit"
+          git add patches-bundle.json patches-list.json
+          git commit -m "Update patches-bundle.json and patches-list.json for v$VERSION" || echo "nothing to commit"
           git push origin "$DEFAULT_BRANCH"
 
       - name: Attach to release

@@ -30,7 +30,6 @@ if (-not $ExportMpp) {
 $Here = $PSScriptRoot
 $Work = Join-Path $Here "work"; New-Item -ItemType Directory -Force $Work | Out-Null
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Fail "git not found on PATH" }
 if (-not (Get-Command $JavaExe -ErrorAction SilentlyContinue)) { Fail "java not found: $JavaExe" }
 
 # java -version prints to stderr; run it through cmd so PowerShell doesn't treat that as an error.
@@ -49,15 +48,7 @@ if ($jvText -notmatch '(?i)openjdk') {
 if (-not $env:GITHUB_ACTOR) { Fail "GITHUB_ACTOR not set (your GitHub username)" }
 if (-not $env:GITHUB_TOKEN) { Fail "GITHUB_TOKEN not set (token with read:packages)" }
 
-Write-Host "==> Fetching morphe-patches template"
-$P = Join-Path $Work "morphe-patches"
-if (Test-Path (Join-Path $P ".git")) {
-  git -C $P pull --ff-only
-  if ($LASTEXITCODE -ne 0) { Fail "git pull failed" }
-} else {
-  git clone --depth 1 https://github.com/MorpheApp/morphe-patches.git $P
-  if ($LASTEXITCODE -ne 0) { Fail "git clone failed" }
-}
+$P = $Here   # standalone Gradle project
 
 # Verify the token against the registry BEFORE the long Gradle build.
 $ver = (Select-String -Path (Join-Path $P "gradle\libs.versions.toml") -Pattern '^morphe-patcher\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
@@ -76,23 +67,6 @@ if ($ver) {
     Write-Host "Token check inconclusive (HTTP $code); continuing anyway." -ForegroundColor Yellow
   }
 }
-
-Write-Host "==> Copying Marketplace-only sources in"
-$extDst = Join-Path $P "extensions\facebook"
-$patDst = Join-Path $P "patches\src\main\kotlin\app\morphe\patches\facebook"
-New-Item -ItemType Directory -Force $extDst, $patDst | Out-Null
-Copy-Item "$Here\extensions\facebook\*" $extDst -Recurse -Force
-Copy-Item "$Here\patches\src\main\kotlin\app\morphe\patches\facebook\*" $patDst -Recurse -Force
-$resDst = Join-Path $P "patches\src\main\resources\marketplace-icon"
-New-Item -ItemType Directory -Force $resDst | Out-Null
-Copy-Item "$Here\patches\src\main\resources\marketplace-icon\*" $resDst -Recurse -Force
-# Facebook-only bundle: drop every other app's patches and the universal ones.
-$K = Join-Path $P "patches\src\main\kotlin\app\morphe\patches"
-foreach ($d in "youtube","music","reddit","shared","util") { Remove-Item -Recurse -Force (Join-Path $K $d) -ErrorAction SilentlyContinue }
-Remove-Item -Recurse -Force (Join-Path $P "patches\src\test") -ErrorAction SilentlyContinue
-foreach ($d in "debugging","installer","network","resources","signature","updates") { Remove-Item -Recurse -Force (Join-Path $K "all\misc\$d") -ErrorAction SilentlyContinue }
-Get-ChildItem (Join-Path $P "patches\src\main\resources") -Directory | Where-Object Name -ne "marketplace-icon" | Remove-Item -Recurse -Force
-foreach ($d in "youtube","music","reddit","shared","shared-youtube") { Remove-Item -Recurse -Force (Join-Path $P "extensions\$d") -ErrorAction SilentlyContinue }
 
 Write-Host "==> Building patch bundle (first run downloads a lot; this can take several minutes)"
 Push-Location $P
