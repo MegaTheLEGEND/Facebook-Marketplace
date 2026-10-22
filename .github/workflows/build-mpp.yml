@@ -46,7 +46,9 @@ jobs:
           # (classic PAT, read:packages only) and it will be used instead.
           GPR_USER: ${{ github.actor }}
           GPR_KEY: ${{ secrets.GPR_TOKEN || secrets.GITHUB_TOKEN }}
-        run: ./gradlew :patches:buildAndroid --no-daemon -Pversion="$VERSION" -Pgpr.user="$GPR_USER" -Pgpr.key="$GPR_KEY"
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :patches:buildAndroid --no-daemon -Pversion="$VERSION" -Pgpr.user="$GPR_USER" -Pgpr.key="$GPR_KEY"
 
       - name: Collect .mpp
         run: |

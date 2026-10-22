@@ -3,3 +3,5 @@
 *.ps1 text eol=crlf
 *.apk binary
 *.mpp binary
+gradlew text eol=lf
+*.bat text eol=crlf
