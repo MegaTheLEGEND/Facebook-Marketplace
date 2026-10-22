@@ -82,9 +82,9 @@ val marketplaceRenamePatch = resourcePatch(
     description = "Changes the package name to $DEFAULT_PACKAGE_NAME, the app name to " +
         "$DEFAULT_APP_NAME and the launcher icon to a storefront (all configurable), so the patched app installs next to the stock " +
         "Facebook app. Uses the \"Clone app\" patch for the package name.",
-    // Universal patch (no compatibleWith), so Morphe requires default = false; enable by name.
-    default = false
+    default = true
 ) {
+    compatibleWith(COMPATIBILITY_FACEBOOK)
     dependsOn(cloneAppPatch)
 
     val newPackageNameOption = stringOption(

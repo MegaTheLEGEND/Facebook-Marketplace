@@ -16,6 +16,8 @@ Not affiliated with Meta. Personal use only; don't redistribute Facebook's APK.
 - An "About" entry in the account menu
 - Installs as its own app named **Marketplace** (`io.focalpoint.prism`) with a storefront icon, next to the normal Facebook app
 
+Run the "Build .mpp" workflow (Actions tab) with a version number to get a new GitHub release with the `.mpp` attached.
+
 Built for Facebook `com.facebook.katana` **582.0.0.50.54** (arm64). Other versions won't patch correctly.
 
 ## Get the patch file (.mpp)

@@ -117,19 +117,17 @@ private const val PROFILE_EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/ProfileNotice;"
 
 /**
- * Universal-style declaration (no compatibleWith): the compatibility object needs the app's
- * signing-certificate SHA-256, which isn't available from the dex files. The fingerprint
- * itself is what protects against the wrong app/version: it fails to match instead of
- * patching something unintended. Researched and checked against Facebook 582.0.0.50.54.
+ * Compatible only with Facebook 582.0.0.50.54 (see Compatibility.kt). The fingerprints also fail to match
+ * rather than patch something unintended on another build.
  */
 @Suppress("unused")
 val marketplaceOnlyPatch = bytecodePatch(
     name = "Marketplace only",
     description = "Opens Facebook directly on Marketplace and (optionally) hides the bottom tab bar. " +
         "Built for Facebook 582.0.0.50.54 (com.facebook.katana).",
-    // Morphe requires universal patches (no compatibleWith) to be default = false; enable by name.
-    default = false
+    default = true
 ) {
+    compatibleWith(COMPATIBILITY_FACEBOOK)
     extendWith("extensions/facebook.mpe")
 
     hideTabBarOption()
