@@ -56,6 +56,7 @@ public final class TouchInspector {
             BroadcastReceiver receiver = new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context c, Intent i) {
+                    if (i.getBooleanExtra("dump", false)) { dumpWindows(); return; }
                     enabled = i.getBooleanExtra("on", !enabled);
                     Log.i(TAG, "inspector " + (enabled ? "ON" : "OFF"));
                 }
@@ -125,6 +126,39 @@ public final class TouchInspector {
         }
     }
 
+    /** adb ... --ez dump true: logs the view tree of EVERY window (dialogs, popups, bottom sheets). */
+    private static void dumpWindows() {
+        try {
+            Class<?> wmg = Class.forName("android.view.WindowManagerGlobal");
+            Object inst = wmg.getMethod("getInstance").invoke(null);
+            Field f = wmg.getDeclaredField("mViews");
+            f.setAccessible(true);
+            List<?> views = (List<?>) f.get(inst);
+            Log.i(TAG, "==== DUMP " + views.size() + " windows");
+            for (int i = 0; i < views.size(); i++) {
+                View v = (View) views.get(i);
+                Log.i(TAG, "-- window " + i + " " + v.getClass().getName());
+                dumpTree(v, 0);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "dump failed", t);
+        }
+    }
+
+    private static void dumpTree(View v, int depth) {
+        if (depth > 40) return;
+        StringBuilder pad = new StringBuilder();
+        for (int i = 0; i < depth; i++) pad.append(' ');
+        int vis = v.getVisibility();
+        Log.i(TAG, "  " + pad + (vis == View.VISIBLE ? "" : vis == View.GONE ? "(GONE) " : "(INVIS) ")
+                + describe(v) + (v instanceof ViewGroup ? " kids=" + ((ViewGroup) v).getChildCount() : ""));
+        if (vis == View.GONE) return;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) dumpTree(g.getChildAt(i), depth + 1);
+        }
+    }
+
     private static void report(Activity activity, float rawX, float rawY) {
         View decor = activity.getWindow().getDecorView();
         List<View> chain = new ArrayList<>();
@@ -163,11 +197,21 @@ public final class TouchInspector {
         out.add(v);
         if (v instanceof ViewGroup) {
             ViewGroup g = (ViewGroup) v;
+            List<View> best = null;
             for (int i = g.getChildCount() - 1; i >= 0; i--) { // topmost child first
-                if (hit(g.getChildAt(i), x, y, out)) break;
+                List<View> t = new ArrayList<>();
+                if (!hit(g.getChildAt(i), x, y, t)) continue;
+                if (best == null) best = t;
+                if (anyClickable(t)) { best = t; break; } // overlays that swallow nothing don't hide the real target
             }
+            if (best != null) out.addAll(best);
         }
         return true;
+    }
+
+    private static boolean anyClickable(List<View> chain) {
+        for (View v : chain) if (v.isClickable() || v.isLongClickable()) return true;
+        return false;
     }
 
     private static String describe(View v) {

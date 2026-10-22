@@ -393,3 +393,44 @@ internal object SearchLauncherFingerprint : Fingerprint(
         "I"
     )
 )
+
+// ---------------------------------------------------------------------------------------------
+// "About" row in the Marketplace account menu (top-right nav bar button).
+//
+// Facebook 582.0.0.50.54 (classes2.dex / classes7.dex / classes11.dex), checked against the real dex:
+//  - The button is `X.2BS` (a View, content description "Tap to view your Marketplace account") in
+//    `com.facebook.navigation.navbar.NavigationBar`. Its click listener is `X.2Cl.onClick`, which only logs
+//    ("click_point" = "tap_top_right_nav", `X.2Co.A02` = navbar analytics) and then calls the real listener
+//    stored in `X.292.A01` (X.292 = nav bar button config, built by `X.28u`).
+//  - That listener is built in `X.CNM.A02(Context, Fragment, FbUserSession, X.28n)` (CNM = the Marketplace tab's nav
+//    bar controller): it adds the "composer-button" (`X.D5M` case 0) and the "tab_bar_you" button (`X.D5M` case 2,
+//    id "surface_menu" when the flag below is on).
+//  - `X.D5M.onClick` for "tab_bar_you": if MobileConfig 72339197887185287 is on it calls
+//    `X.CNM.buildMarketplaceSurfaceMenuItems(FbUserSession, Context)Ljava/util/List;` and shows the list with
+//    `X.OXT.A00(View, FbUserSession, Integer, "marketplace", List)`; otherwise it opens the React Native
+//    "marketplace_you" route (`X.4i8.A0J(Context, X.1Tt.A3B)`), which can't be patched from here.
+//  - `buildMarketplaceSurfaceMenuItems` (13 registers: p0 = v10 CNM, p1 = v11 FbUserSession, p2 = v12 Context;
+//    v2 = the `X.0CS` list for the whole method and never reassigned) appends `X.OlL` rows and ends with
+//    `invoke-static {v2}, X.0s1->A1j(List)X.0CS` + `move-result-object v0` + `return-object v0`. Rows, in order:
+//    inbox (id from X.DJi.A00(12), badge = `A0C` AtomicInteger), 1846 (X.198.A00), "marketplace_recently_viewed",
+//    "marketplace_selling" (flag), 1844 (flag), "marketplace_jobs_profile" (flag), "marketplace_more_options".
+//  - `X.OlL(X.1UM icon, String label, String id, kotlin.jvm.functions.Function0 onClick, int badge)`; `X.1UM` is an enum
+//    of icons whose constant NAMES are kept as strings ("INFO_CIRCLE" = field AC0), so the extension finds an icon by
+//    `Enum.name()` instead of the obfuscated field name.
+//
+// The patch inserts `AboutMenu.addAboutItem(v<list>, p2)` immediately before the `X.0s1.A1j` call (v2 and v12 are both
+// live there, no new register needed). The extension builds the OlL and its Function0 by reflection (Proxy), so the
+// row works without Kotlin on the extension's compile classpath. Anchored by class + name + signature; the method name
+// is NOT obfuscated in this build (so are `setInboxRenderedInNavBarForTesting` and `X.D5M.onClick`/`X.2Cl.onClick`, which are interface overrides).
+// Not covered: when flag 72339197887185287 is off the button opens the React Native "You" page instead of this menu.
+// ---------------------------------------------------------------------------------------------
+
+internal object MarketplaceMenuItemsFingerprint : Fingerprint(
+    definingClass = "LX/CNM;",
+    name = "buildMarketplaceSurfaceMenuItems",
+    returnType = "Ljava/util/List;",
+    parameters = listOf(
+        "Lcom/facebook/auth/usersession/FbUserSession;",
+        "Landroid/content/Context;"
+    )
+)

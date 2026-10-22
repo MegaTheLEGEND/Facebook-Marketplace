@@ -8,6 +8,7 @@ import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMuta
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
+import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
@@ -22,6 +23,9 @@ private const val EXTENSION_CLASS =
 
 private const val GROUP_EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/GroupSuggestions;"
+
+private const val ABOUT_EXTENSION_CLASS =
+    "Lapp/morphe/extension/facebook/marketplace/AboutMenu;"
 
 private const val SEARCH_EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/SearchScope;"
@@ -101,6 +105,14 @@ internal val hideProfileSettingsNoteOption = booleanOption(
     description = "Removes the paragraph with the \"Go to settings\" link on the Marketplace profile screen."
 )
 
+internal val aboutPageOption = booleanOption(
+    key = "aboutPage",
+    default = true,
+    title = "Add an About page to the account menu",
+    description = "Adds an \"About\" row to the list that opens from the top-right account button on Marketplace. " +
+        "It opens a dialog describing this app."
+)
+
 private const val PROFILE_EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/ProfileNotice;"
 
@@ -130,6 +142,7 @@ val marketplaceOnlyPatch = bytecodePatch(
     blockGroupSuggestionsOption()
     blockFacebookSearchOption()
     hideProfileSettingsNoteOption()
+    aboutPageOption()
 
     execute {
         val hideTabBar by hideTabBarOption
@@ -142,6 +155,7 @@ val marketplaceOnlyPatch = bytecodePatch(
         val blockGroupSuggestions by blockGroupSuggestionsOption
         val blockFacebookSearch by blockFacebookSearchOption
         val hideProfileSettingsNote by hideProfileSettingsNoteOption
+        val aboutPage by aboutPageOption
 
         val entryPoint =
             if (hideTabBar == true) "onStartingTabDeterminedHideBar" else "onStartingTabDetermined"
@@ -179,6 +193,29 @@ val marketplaceOnlyPatch = bytecodePatch(
                 0,
                 "invoke-static/range { p0 .. p0 }, $EXTENSION_CLASS->capture(Ljava/lang/Object;)V"
             )
+        }
+
+        if (aboutPage == true) {
+            // Adds the "About" row to the account menu. The builder ends with X.0s1.A1j(list) (returns the
+            // list); call the extension right before it with that list register and the Context (p2). Both
+            // registers are live there (see MarketplaceMenuItemsFingerprint), so no scratch register is needed.
+            MarketplaceMenuItemsFingerprint.method.apply {
+                val instructions = implementation!!.instructions
+                val finishIndex = instructions.indexOfLast { instruction ->
+                    val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
+                    instruction.opcode == Opcode.INVOKE_STATIC &&
+                        reference != null &&
+                        reference.name == "A1j" &&
+                        reference.parameterTypes.map { it.toString() } == listOf("Ljava/util/List;")
+                }
+                check(finishIndex >= 0) { "A1j(List) call not found in buildMarketplaceSurfaceMenuItems" }
+                val listRegister = (instructions.elementAt(finishIndex) as FiveRegisterInstruction).registerC
+                addInstructions(
+                    finishIndex,
+                    "invoke-static { v$listRegister, p2 }, " +
+                        "$ABOUT_EXTENSION_CLASS->addAboutItem(Ljava/lang/Object;Ljava/lang/Object;)V"
+                )
+            }
         }
 
         if (lockNavigation == true) {

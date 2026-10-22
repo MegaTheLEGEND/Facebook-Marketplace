@@ -9,6 +9,9 @@ param(
   [switch]$KeepInAppBrowser,           # do NOT force links into the system browser
   [switch]$KeepReels,                  # do NOT block the Reels / fullscreen video viewer
   [switch]$KeepHomeBack,               # back on Marketplace goes to Facebook Home (stock behavior)
+  [switch]$Inspector,                  # DEBUG: also apply "Debug touch inspector" (tools/inspect.py); never ship
+  [switch]$KeepAboutPage,              # do NOT add the "About" row to the Marketplace account menu
+  [switch]$KeepProfileNote,            # do NOT hide the Marketplace profile "Go to settings" paragraph
   [switch]$KeepOriginalPackage         # do NOT rename: keep com.facebook.katana and the name "Facebook"
 )
 
@@ -114,6 +117,9 @@ if ($KeepTabBar) { $patchArgs += "-OhideTabBar=false" }
 if ($KeepNavigation) { $patchArgs += "-OlockNavigation=false" }
 if ($KeepInAppBrowser) { $patchArgs += "-OexternalLinks=false" }
 if ($KeepReels) { $patchArgs += "-OblockReels=false" }
+if ($Inspector) { $patchArgs += @("-e", "Debug touch inspector") }
+if ($KeepAboutPage) { $patchArgs += "-OaboutPage=false" }
+if ($KeepProfileNote) { $patchArgs += "-OhideProfileSettingsNote=false" }
 if ($KeepHomeBack) { $patchArgs += "-OmarketplaceIsHome=false" }
 $patchArgs += $workApk
 & $JavaExe @patchArgs

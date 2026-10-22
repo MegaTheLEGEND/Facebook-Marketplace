@@ -21,6 +21,7 @@ Not affiliated with Meta. For personal use; don't commit or redistribute Faceboo
 | Back leaves the app | `marketplaceIsHome` (on) | In `onBackPressedInternal` the "home tab id" read from `X.1Hz.A02()` is replaced with Marketplace's id, so with nothing left to pop, back exits instead of switching to the Feed. |
 | Returning after a while stays on Marketplace | `returnToMarketplace` (on) | Every tab switch goes through `X.2FU.A06(..., int index)`, including Facebook's "reset to feed in background" routine (`X.2Nb.A03` -> `X.23K.A0T`). The patch replaces the requested index with Marketplace's (looked up by tab id), so the reset lands on Marketplace instead of the Feed. |
 | Always dark mode | `forceDarkMode` (on) | Facebook's own Dark mode setting is `X.1Mi.A00` (`ThemePreferences$State`: ON / OFF / SYSTEM), read by `X.1Mi.A05()` ("is dark?", called by every activity's theme setup). The patch loads `State.ON` before each store to `A00` in the `X.1Mi` constructor and replaces the argument of the setter `X.1Mi.A04(State)`, i.e. the same as choosing "On" in Facebook's settings, so the system theme is ignored. Because that alone wasn't enough on a device, the three decision points are also made unconditional: `X.1Mi.A05()` ("is dark?") returns true, `X.1Mi.A03(theme, isDark)` always applies the dark style, and the FDS/Litho resolver `X.25R.A02(Context)` returns true. |
+| About page in the account menu | `aboutPage` (on) | The top-right button ("Tap to view your Marketplace account", `X.2BS`) opens a native menu built by `X.CNM.buildMarketplaceSurfaceMenuItems` (`X.D5M.onClick`, case "tab_bar_you", shows it with `X.OXT.A00`). The patch calls `AboutMenu.addAboutItem(list, context)` right before the builder's `X.0s1.A1j(list)`; the extension appends an `X.OlL` row (icon `INFO_CIRCLE` found by `Enum.name()`, label "About", id `marketplace_about`, a reflective `Function0` proxy) whose click opens `AboutDialog`, a full-screen dark About page (flat sections on a near-black surface, blue-to-purple accent on the title rule and the GitHub button; about text, developer info, "not affiliated with Meta"). It is a full-screen `Dialog` built in code, not an Activity: a new Activity needs a manifest entry, which an extension can't add. If the flag behind that menu is off, the button opens the React Native "You" page instead and no row can be added. |
 | Renamed app (separate patch) | `Marketplace rename` (on in the build scripts; `-KeepOriginalPackage` / `KEEP_ORIGINAL_PACKAGE=1` opts out). Options: `newPackageName` = `io.focalpoint.prism`, `appName` = `Marketplace` | Depends on Morphe's own `Clone app` patch and hands it the package name via `setOrGetFallbackPackageName` (same hook GmsCore support uses). Clone app's finalize step sets the manifest `package` and renames custom permissions and provider authorities starting with `com.facebook.katana.`. The display name is a literal `android:label` written on `<application>` and on every LAUNCHER `<activity>` / `<activity-alias>` (literal, because resource names are stripped in this build and a literal can't be overridden by `values-xx`). Option `changeIcon` (on) also replaces the launcher icon with a bundled adaptive storefront icon (`patches/src/main/resources/marketplace-icon/`, generated from `tools/icon/preview.webp` by `tools/icon/make_icon.py`): `android:icon` is pointed at `@mipmap/marketplace_launcher` on `<application>` and every launcher entry and `android:roundIcon` is removed. Installs next to the stock Facebook app. |
 
 If Marketplace isn't in the account's tab list, or a lookup fails, the extension does nothing and Facebook opens normally.
@@ -42,6 +43,7 @@ See [TODO.md](TODO.md) for what's next.
 | Remove group suggestions ("Recommended groups" on search, "Related groups" on a listing) | Written from the dex + the APK's MobileConfig metadata (React Native screens, so the group modules are switched off through their flags, `GroupSuggestions.java`), unit-tested on a JVM, **not yet tested on device** |
 | Search stays in Marketplace ("Search in all of Facebook", "Search with Meta AI") | Written without the APK (text matching + flag-name pattern), unit-tested on a JVM with fake views, **not yet tested on device** |
 | Navigation lock | **Works on device**: app launches, swipe and the side menu are blocked. The hamburger icon is still drawn (see TODO) |
+| About row in the account menu | Written from the dex (injection point and `X.OlL` shape checked in `classes7.dex`), extension logic unit-tested on a JVM, **not yet tested on device** |
 | Extension logic | Unit-tested on a plain JVM (`tests/`) |
 | Rename to `io.focalpoint.prism` / "Marketplace" + storefront icon | **Works on device** (builds, installs next to stock Facebook, launches) |
 
@@ -77,7 +79,7 @@ set GITHUB_ACTOR=your-username
 set GITHUB_TOKEN=ghp_...
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -Apk "C:\path\to\com.facebook.katana_582.0.0.50.54-....apk" -JavaExe "C:\Program Files\Eclipse Adoptium\jdk-21...\bin\java.exe"
 ```
-Flags: `-KeepTabBar` (leave the bottom bar), `-KeepNavigation` (don't lock swiping / left menu), `-KeepInAppBrowser` (keep the in-app WebView), `-KeepReels` (don't block Reels / fullscreen video), `-KeepHomeBack` (back goes to Facebook Home), `-KeepOriginalPackage` (don't rename: keep `com.facebook.katana` and the name "Facebook").
+Flags: `-KeepTabBar` (leave the bottom bar), `-KeepNavigation` (don't lock swiping / left menu), `-KeepInAppBrowser` (keep the in-app WebView), `-KeepReels` (don't block Reels / fullscreen video), `-KeepAboutPage` (no About row in the account menu), `-KeepHomeBack` (back goes to Facebook Home), `-KeepOriginalPackage` (don't rename: keep `com.facebook.katana` and the name "Facebook").
 
 Linux/macOS:
 ```
@@ -109,7 +111,7 @@ build.ps1 / build.sh
 
 ### Unit tests
 ```
-cd tests && javac -d out $(find src -name '*.java') ../extensions/facebook/src/main/java/app/morphe/extension/facebook/marketplace/*.java && java -cp out Test && java -cp out GroupSuggestionsTest
+cd tests && javac -d out $(find src -name '*.java') ../extensions/facebook/src/main/java/app/morphe/extension/facebook/marketplace/*.java && java -cp out Test && java -cp out GroupSuggestionsTest && java -cp out AboutMenuTest
 ```
 
 ### Finding things in a new build (`tools/dexscan.py`)
