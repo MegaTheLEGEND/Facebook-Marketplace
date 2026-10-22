@@ -244,11 +244,13 @@ public final class SearchScope {
         if (decor == null) return;
         final Class<?> listenerType = Class.forName("android.view.ViewTreeObserver$OnGlobalLayoutListener");
         final boolean[] pending = {false};
+        final boolean overflow = activity.getClass().getName().endsWith("ProfileDynamicActionBarOverflowActivity");
         final Runnable scan = new Runnable() {
             @Override
             public void run() {
                 pending[0] = false;
                 try {
+                    if (overflow) hideOverflowSearch(decor, 0, new int[]{MAX_NODES});
                     int hidden = hideMatches(decor);
                     if (hidden > 0) log("hid " + hidden + " Facebook-wide search entr" + (hidden == 1 ? "y" : "ies"));
                 } catch (Throwable ignored) {
@@ -274,6 +276,28 @@ public final class SearchScope {
                 });
         callArgs(call(decor, "getViewTreeObserver"), "addOnGlobalLayoutListener", new Class<?>[]{listenerType}, listener);
         scan.run();
+    }
+
+    /** Profile "..." menu: removes the row whose description is exactly "Search" (GONE + zero height, so no gap). */
+    static void hideOverflowSearch(Object view, int depth, int[] budget) throws Exception {
+        if (view == null || depth > MAX_DEPTH || budget[0]-- <= 0) return;
+        if (getInt(view, "getVisibility") == VIEW_GONE) return;
+        String t = textOf(view);
+        if (t != null && "search".equals(t.trim().toLowerCase(Locale.ROOT))
+                && view.getClass().getName().endsWith("LithoView")) {
+            callVoid(view, "setVisibility", new Class<?>[]{int.class}, VIEW_GONE);
+            Object lp = call(view, "getLayoutParams");
+            if (lp != null) {
+                lp.getClass().getField("height").setInt(lp, 0);
+                callVoid(view, "setLayoutParams", new Class<?>[]{Class.forName("android.view.ViewGroup$LayoutParams")}, lp);
+            }
+            return;
+        }
+        if (hasMethod(view, "getChildCount")) {
+            int n = getInt(view, "getChildCount");
+            for (int i = 0; i < n; i++)
+                hideOverflowSearch(callArgs(view, "getChildAt", new Class<?>[]{int.class}, i), depth + 1, budget);
+        }
     }
 
     /** Hides the row of every view under {@code root} whose text matches {@link #PHRASES}; returns how many rows. */

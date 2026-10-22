@@ -1,55 +1,76 @@
 # TODO
 
-- [x] **Disable internal webview**: make all links open directly in the system browser.
-  - Patch written (`externalLinks` option, on by default). **Confirmed working on device.** `X.dBh.A00` decides how a link opens (WEBVIEW / EXTERNAL / CUSTOM_TABS); it now always returns EXTERNAL, which is what Facebook's own "links open externally" setting does.
-  - To test: tap a link in a listing description or a seller message; it should open in your default browser and no in-app browser (BrowserLiteActivity) should appear.
-  - Possible gap: other launchers (Messenger, `LinkHandlingHelper` / `X.Rrg.A0C`, `BrowserLiteActivity` started directly) don't go through `dBh`. Safety net if needed: make `BrowserLiteActivity` redirect its URL to the system browser and finish.
-- [x] **Remove Reels**: delete the reels viewport engine and any code paths that load reels. Search for `reels` and remove.
-  - Patch written (`blockReels` option, on by default). **Confirmed on device: reels don't start, no audio.** Traced from your logcat: a profile reel goes `X.7rP.A01` ("WarionEntryPointHelper") -> `X.4Ok.A0C` -> `X.4Ok.A0B` -> `X.4Ok.A03` -> `ImmersiveActivity` (`ReelsVddLayout`). That whole chain is cut at the top and at the launch code; nothing named "viewport engine" exists, this launcher is the engine.
-  - To test: open a user's profile and tap a reel; nothing should open and no audio should start. Also try a reel in the feed and a `fb://reel/...` link.
-  - Side effect: all fullscreen video (Watch, listing videos) is blocked too, since Reels share that launcher.
-  - Not covered yet: Reels grid/tab UI on profiles still renders (`FbShortsProfileTabFragment`), inline autoplay in feeds, the Reels tab (already unreachable once the tab bar is hidden).
-- [~] **Disable back button to home screen** (top priority): remove the back button on the marketplace tab that sends you back to facebook home screen. maybe make the marketplace tab the new homescreen
-  - Patch written (`marketplaceIsHome` option, on by default), **untested on device**. Cause (`FbMainTabActivityDelegate.onBackPressedInternal`): when the tab's own stack and the fragment backstack are empty, back switches to the "home tab" (id from `X.1Hz.A02()`) unless you're already on it, and only then calls `moveTaskToBack`. The patch makes that call return Marketplace's tab id, so Marketplace *is* home and back leaves the app.
-  - To test: from the Marketplace root press back (app should go to the background); from an item page or search results back should still go up one level first.
-  - Not changed: the other `1Hz.A02()` callers (startup, tab-selected handling). If something else treats "home" specially, the cleaner but riskier fix is to make `1Hz.A02` itself return Marketplace's id.
-- [~] **Sometimes returning to the app shows the original Facebook home**: every once in a while, when coming back to the app after a long time, it is on the Facebook Home feed instead of Marketplace.
-  - Patch written (`returnToMarketplace` option, on by default), **untested on device**. Cause: Facebook's "return to feed" routine (`X.2Nb.A03`, pref `r2f_force_feed_destination`, log key `reset_to_feed_in_background`) calls `X.23K.A0T(feedTabId, ...)` when you come back after being away. Every tab switch (that, `handleNewIntent`, back handling, deep links) funnels into `X.2FU.A06(Intent, Bundle, 2Vz, String, int index)`; the patch swaps the `index` for Marketplace's (via `X.2FU.A04(long)`), so the reset lands on Marketplace. If Marketplace isn't among the tabs, nothing changes.
-  - To test: open Marketplace, leave the app in the background for a long time (or use "don't keep activities"/swipe it away and relaunch), come back. It should still be Marketplace. If it still shows Feed, capture `adb logcat` right as you return and send it.
-  - Not changed: `X.1Hz.A02()` itself (still returns Feed's id for the other callers); a redirect at the pager is enough for every switch path found.
-- [~] **Disable group suggestions** (top priority): remove the "Recommended groups" block on Marketplace search (Search button > scroll down) and the "Related groups" block on a listing page (scroll down).
-  - Patch written (`blockGroupSuggestions` option, on by default), **untested on device**. Both screens are React Native (`MarketplaceSearchRoute` / `MarketplaceSearchHubRoute`, `MarketplaceProductDetailsNonIPadRoute`), so the blocks are drawn by JS in the Hermes bundle, which can't be patched. Facebook calls them GYSJ ("Groups You Should Join"). The JS decides what to draw from MobileConfig flags, read through `MobileConfigNativeModule.getBool*`; the patch filters the result of all six boolean getters (`GroupSuggestions.java`, same-size no-branch inserts before the `return`; register analysis in `Fingerprints.kt`).
-  - Flags forced: `mp_pathing_lth:disable_mp_search_nullstate_gysj` -> **true** (Facebook's own kill switch for the search block); **false**: `groups_yakima_gysj:enable_gysj_unit_rendering` (default true; GYSJ units in the Marketplace feed framework), `mp_serp_h1_2026:*groups_insights*`, `gysj_bsg_pdp:enable_show_hidden_bsg_pdp_section`, `bsg_gysj_distribution:category_feed_gysj_v2`, `group_discussion_mp_pdp:*`, `group_discussion_mp_feed:*`, `marketplace_jobs:show_*groups*_on_pdp`. Full list: the table in `GroupSuggestions.java` (specifiers come from the APK's `assets/rn_params*.txt`).
-  - To test: open Marketplace > Search (tap the search field, don't type) and scroll down; open any listing and scroll to the bottom. No groups block on either. Then `adb logcat -s MarketplaceOnly`: each overridden flag logs once as `group flag NAME: <facebook's value> -> <forced>`.
-  - **Honest uncertainty**: the search block has a dedicated kill switch, so that one is likely fine. For the listing page no dedicated switch exists in this build; it's covered through the GYSJ render flag and the group discussion flags, which is a best guess from the flag names. If a block survives: scroll to it, run `adb logcat -s MarketplaceOnly` and send the output. Reads of other group-looking flags are logged once as `group flag read, not overridden: NAME = value`, which is enough to find the right flag. If no `group flag` lines appear at all, the JS isn't reading flags through this Java module (e.g. a JSI path) and the fix has to move to the GraphQL layer.
-  - Not covered yet (native Facebook, not Marketplace): the "Related groups" plugin under posts/permalinks (`RelatedGroupsPlugin`, `show_related_groups_in_permalink`), the Groups tab, "from groups" labels and group strings in the feed. Not reachable once Marketplace is the only surface, but part of "Remove unused components".
-- [~] **Keep search inside Marketplace**: remove "Search in all of Facebook" and "Search with Meta AI" from Marketplace search.
-  - Patch written (`blockFacebookSearch` option, on by default), **untested on device**. Layer 0 is verified against the dex (582.0.0.50.54), the other two are not (written before the dex was available):
-    0. **Launcher gate**: `X.hQ5.A01` (the one method that builds and starts Facebook's search activity) gets a stack check at index 0 (`SearchScope.allowSearchLaunch`): calls from the profile handlers `X.P9y` / `X.P9Y` / `X.P8e` (and `com.facebook.timeline.*`) return; everything else passes (a first version that only allowed `com.facebook.fbreact.marketplace.*` broke Marketplace's search button). Traced chain for the profile: `ProfileFragment` > `X.P9y`/`X.P9Y`/`X.P8e` > `X.Bap.A01` / `X.hQ5.A00` > `hQ5.A01`. Details in `Fingerprints.kt`. To test: seller profile > "..." > Search should do nothing; Marketplace's own search box must still open. `adb logcat -s MarketplaceOnly` shows `blocked Facebook-wide search launch from <class.method>`. Not covered: the search *results* intent builder `X.hYz.A00` (Marketplace uses it too), so a deep link could still open a results page.
-    Then:
-    1. **Text**: `SearchScope.install()` is called from the tab-controller return hooks, registers `ActivityLifecycleCallbacks` and, on each layout pass of a resumed activity, hides the row whose text or content description contains one of `PHRASES` ("search in all of facebook", "search with meta ai", "ask meta ai", ...). The row is the highest ancestor that is shorter than 1/6 of the screen, contains no input field and holds at most one other text, so a list of suggestions is never hidden as a whole. English only.
-    2. **Flags**: a second pass of the MobileConfig filter (same six getters as group suggestions, chained after it). `filterBoolByName` forces a flag to false when its name is Marketplace-scoped, about search, and mentions Meta AI / all of Facebook / global search, unless the name looks like a kill switch (`disable`/`hide`/...). `BLOCKED_SPECS` (exact specifiers) is empty on purpose: the real flag names weren't available.
-  - To test: Marketplace > search field > type a query; neither entry should appear in the suggestions or under the results. Then `adb logcat -s MarketplaceOnly`: `hid N Facebook-wide search entry` means layer 1 worked; `search flag NAME: true -> false` / `search flag read, not overridden: NAME = value` list the flags layer 2 saw.
-  - If an entry survives: send the logcat, or find the string with `tools/dexscan.py dexdir strings "(?i)meta ai|all of facebook"` and the flag with `grep -i "search.*ai\|all_of_facebook" assets/rn_params*.txt`, then add the hex spec to `SearchScope.BLOCKED_SPECS` or the exact name rule. Likely gaps: a different phrase wording, a localized string, or a native (non-RN) typeahead that draws text on a canvas (then no child view carries the text; the fix is on the flag or the data source).
-  - Risk: if the flag layer matches a flag the search screen needs, search could render blank; opt out with `-OblockFacebookSearch=false` (Morphe CLI option) and send the logcat.
-- [ ] **Replace the hamburger with a refresh button** (do after the blank strip): keep the hamburger's slot in the top bar, but instead of a dead menu icon put a refresh button there that reloads the Marketplace feed. The side menu stays disabled (`lockNavigation`).
-  - Starting points: the nav-bar sliding-panel entry button, click handler `X.2Eb` (calls `X.24g.A0E("bookmarks_panel", ...)`), set up in `X.23K.A0D` / `WordmarkNavigationBar.initSlidingPanelEntryButton`. Idea: swap the icon drawable and replace the click handler with a call that refreshes the current tab (find the pull-to-refresh / tab "reselect" path; tapping the already-selected tab normally scrolls to top and refreshes).
-- [x] **Make Marketplace fill the whole viewport**: the blank strip where the bottom tab bar was was still reserved (`hideTabBar` only set the bar view to `GONE`).
-  - Patch written (inside `hideTabBar`, no new option). **Confirmed fixed on device.** The layout XML can't be read from the APK (view ids are stripped, layouts aren't resolvable), so the extension works on the live view tree: after the bar is hidden it runs four passes (0 / 0.3 / 1.2 / 3 s, Facebook re-applies heights and insets after first layout) that (1) keep the bar `GONE` with height 0, (2) hide full-width, short, childless views sitting on the bottom edge next to the bar (dividers / fillers, includes `X.2GO` fields `A10`/`A08`), (3) zero a bottom padding / bottom margin on the bar's ancestors that equals the bar's old height (or, if its height wasn't known, anything that isn't the nav-bar inset), (4) log the view tree around the bar.
-  - Known facts: `X.2GO` gets 4 views from `X.3Pg.A00`: `A09` = `TabBarContainerLayout` (a LinearLayout), `A13`, `A10` (id `0x7f0a2041`, visibility toggled in `2GO.A03`), `A08` (id `0x7f0a203f`). `X.23K` also sets the bar container's height from `X.23I.A03` and paints a view (`0x7f0a2043`) with the bar colour.
-  - To test: launch, look at the bottom. If a strip is still there, run `adb logcat -s MarketplaceOnly` right after launch and send the output (class, id, bounds, padding of the bar's parents and siblings); that's enough to target the exact view.
-- [~] **Force dark mode**: always run the app in dark theme regardless of system setting, using Facebook's own setting.
-  - Patch written (`forceDarkMode` option, on by default), **untested on device**. Facebook's setting is `X.1Mi.A00`, a `ThemePreferences$State` (ON = 1, OFF = 2, SYSTEM = 3) persisted under the prefs keys `dark_mode_v3` / `app_level_dark_mode_setting`; only `X.1Mi` touches those keys. Every activity calls `X.1Mi.A05()` to pick the dark or light style (for FB4A: `A00 == ON`, or the OS theme when `A00 == SYSTEM`). The patch loads `State.ON` before each of the three `iput-object A00` in the `X.1Mi` constructor and into the `State` argument of the setter `X.1Mi.A04`.
-  - First attempt (setting pinned to ON only) was **not dark on device**. Re-reading `A05` with jump targets: its ON arm still requires the `A02` flag, `X.fvr.onApplyThemeResource` can force light via `getThemeMode()`, and Litho/FDS components ask `X.25R.A02(Context)` separately. Second attempt also forces `1Mi.A05()` true, `1Mi.A03(theme, Z)` to the dark style, and `25R.A02` true. **Untested.** If still light: send a screenshot and which screen, plus `adb logcat` from launch; the next suspects are RN/WebView content (OS `uiMode`) and the application-context theme, which `X.fvi.A0u` always sets to the light style.
-  - To test: set the phone to light theme and launch; the whole app should be dark. Also change the phone's theme while the app is open; it should stay dark.
-  - Known gap: a few screens that draw their own colours or are web/React Native content may still follow the OS theme; send a screenshot and the screen name if you see one.
-- [~] **Add an About page to the account menu**: the list that pops up from the top-right button on Marketplace gets an "About" row.
-  - Patch written (`aboutPage` option, on by default; build flag `-KeepAboutPage`), **untested on device**. Traced from your inspector dump (`X.2BS` "Tap to view your Marketplace account", onClick `X.2Cl`): `X.2Cl.onClick` -> the listener built in `X.CNM.A02` -> `X.D5M.onClick` ("tab_bar_you") -> `X.CNM.buildMarketplaceSurfaceMenuItems(FbUserSession, Context)` -> `X.OXT.A00(...)` shows the rows. The patch inserts `AboutMenu.addAboutItem(list, p2)` before the builder's `X.0s1.A1j(list)`; the extension adds an `X.OlL(icon, "About", "marketplace_about", Function0, 0)` and the click opens a full-screen About page (`about/AboutDialog.java`, a `Dialog` built in code: dark flat design, blue/purple accent, about text, developer info, GitHub button).
-  - To test: tap the top-right button; "About" should be the last row (after "More options"); tap it, a full-screen dark page opens; Back closes it, "View on GitHub" opens the repo. `adb logcat -s MarketplaceOnly` logs `About: ...` only on failure.
-  - Risks: (1) the menu is only used when MobileConfig flag 72339197887185287 is on (D5M case 2); if it is off the button opens the React Native "You" page and there is no native list to add to (then the About entry has to move elsewhere); (2) icon `INFO_CIRCLE` is looked up by enum name; if it isn't found the row is skipped silently; (3) the callback's return value is `X.0MO.A00` (Redex-renamed `kotlin.Unit`, same as `X.Clo.invoke` returns), `null` if that lookup fails.
-  - Wording lives in `AboutDialog.ABOUT_TEXT` and the `row(...)` calls, colours in the `BG` / `TEXT_*` / `ACCENT_*` constants.
-- [ ] **Remove unused components**: strip code and resources no longer reachable (other tabs, Reels/Watch UI, groups, dating, stories, etc.) to shrink the APK. Needs care: Facebook crashes hard on missing classes, so do it by stubbing out entry points first, then deleting what the verifier and a logcat show is truly dead.
-- [x] **Rename the app to `io.focalpoint.prism` with the name "Marketplace"**: so it installs next to stock Facebook and looks like its own app.
-  - Patch written (`Marketplace rename`, `MarketplaceRenamePatch.kt`; on by default in `build.ps1` / `build.sh`, opt out with `-KeepOriginalPackage` / `KEEP_ORIGINAL_PACKAGE=1`), **Confirmed working on device** (builds, installs and launches; storefront icon applied). Package name goes through Morphe's `Clone app` patch (`setOrGetFallbackPackageName`); the name is a literal `android:label` on `<application>` and every launcher activity/alias. The launcher icon (`changeIcon`, on) is a bundled adaptive icon from `tools/icon/`; `android:icon` is set on `<application>` and every launcher entry, `android:roundIcon` removed.
-  - Tested by: build, `adb install` the result, confirm the launcher shows "Marketplace", `adb shell pm list packages | findstr prism`, and that it still opens on Marketplace. Original Facebook, if installed, should be untouched.
-  - Risks that were checked and did not occur: (1) the build fails while decoding resources (a resource patch makes Morphe decode this APK's resources; the other patch is bytecode-only) - send the Gradle/Morphe output; (2) crash on launch or broken login/notifications because Facebook code hardcodes `com.facebook.katana` (provider authority constants, trusted-caller checks) - send `adb logcat | findstr /i "AndroidRuntime katana"`; if so, find the strings with `tools/dexscan.py dexdir strings "com\.facebook\.katana"` and patch the offenders.
+
+- [x] **Disable internal webview**: make links open directly in the system browser.
+  - The `externalLinks` option is enabled by default.
+  - Confirmed working on device.
+  - Known gap: other launchers such as Messenger, `LinkHandlingHelper` / `X.Rrg.A0C`, or direct `BrowserLiteActivity` launches may bypass `X.dBh.A00`. Test these paths if needed.
+
+- [x] **Block Reels launches**.
+  - The `blockReels` option is enabled by default.
+  - Confirmed on device: Reels do not start and produce no audio.
+  - Known side effect: fullscreen video paths such as Watch and listing videos may also be blocked because they share the launcher.
+  - Not covered: Reels grid/tab UI on profiles and inline autoplay in feeds.
+
+- [x] **Make Marketplace the home tab and fix Back behavior**.
+  - The `marketplaceIsHome` option is enabled by default.
+  - Confirmed working on device: Back from the Marketplace root leaves the app instead of switching to Facebook Home; Back within deeper screens still navigates up.
+
+- [x] **Return to Marketplace when reopening the app**.
+  - The `returnToMarketplace` option is enabled by default.
+  - Confirmed by the user as working on device.
+
+- [x] **Hide group suggestions**.
+  - The `blockGroupSuggestions` option is enabled by default.
+  - Confirmed by the user as working on device.
+  - Scope: Marketplace search and listing-page group suggestion blocks. Other native Facebook Groups-related UI may remain outside the Marketplace surface.
+
+- [ ] **Keep search inside Marketplace**: remove “Search in all of Facebook” and “Search with Meta AI” from Marketplace search.
+  - The `blockFacebookSearch` option is enabled by default, but device behavior has not yet been confirmed.
+  - Test Marketplace search suggestions and results with a query. Confirm both entries are absent and Marketplace search still works.
+  - Test seller profile > `...` > Search; it should not launch Facebook-wide search.
+  - If an entry remains, inspect `adb logcat -s MarketplaceOnly` for `hid N Facebook-wide search entry`, `search flag ...`, and `search flag read, not overridden: ...` messages.
+  - Known gaps: deep links may still open a search results page; text matching is English-only; localized or canvas-rendered entries may evade view filtering.
+  - Risk: a MobileConfig flag match could interfere with Marketplace search. Opt out with `-OblockFacebookSearch=false` if necessary.
+
+- [x] **Make Marketplace fill the whole viewport**: remove the blank strip left by hiding the bottom tab bar.
+  - Confirmed fixed on device.
+
+- [x] **Force dark mode**.
+  - The `forceDarkMode` option is enabled by default.
+  - Confirmed by the user as working on device.
+  - Potential limitation: custom-colored, WebView, or React Native screens may still follow the system theme.
+
+- [x] **Add an About page to the account menu**.
+  - The `aboutPage` option is enabled by default.
+  - Confirmed by the user as working on device.
+  - The page is opened from the Marketplace account menu.
+
+- [ ] **Replace the hamburger with a refresh button**.
+  - Keep the hamburger's top-bar slot, but replace its icon and click handler with a refresh action for the Marketplace feed.
+  - Keep the side menu disabled (`lockNavigation`).
+  - Starting points: `X.2Eb` click handler, `X.23K.A0D`, and `WordmarkNavigationBar.initSlidingPanelEntryButton`.
+  - Find the existing pull-to-refresh or selected-tab reselect path before implementing.
+
+- [ ] **Remove unused components** to reduce APK size.
+  - Audit other tabs and unreachable Reels/Watch UI, Groups, Dating, Stories, and related resources.
+  - Do not delete classes blindly: first stub or block entry points, then confirm through verifier/build results and logcat that code is truly unreachable.
+  - Preserve classes and resources required by Facebook's runtime, reflection, dependency injection, or manifest.
+
+- [x] **Rename the app to `io.focalpoint.prism` with the display name `Marketplace`**.
+  - Confirmed working on device: builds, installs, and launches; the storefront icon is applied.
+  - The original Facebook app remains separately installable.
+
+- [ ] **Restrict direct activity launching**.
+  - Added to the checklist per user request. Implementation and device testing are not yet confirmed.
+  - Audit the merged/installed manifest for exported activities, activity aliases, and intent filters.
+  - Determine which activities are reachable from external apps and whether they need to be exported.
+  - Protect unintended activities while preserving the Marketplace launcher entry point, required Android system integrations, legitimate navigation, and any required deep links.
+  - Test external launch attempts, for example with `adb shell am start -n <package>/<activity>`, and inspect installed package details with `adb shell dumpsys package io.focalpoint.prism`.
+  - Acceptance criteria: external apps cannot directly launch unintended internal activities, while the Marketplace launcher and normal in-app navigation continue to work.
+
+## Notes
+
+- Use `[x]` only for features confirmed working on-device.
+- Use `[ ]` for incomplete work or behavior not yet confirmed.
+- A successful build alone does not count as device verification.
