@@ -18,7 +18,8 @@ if exist "%OUT%.zip" del /q "%OUT%.zip"
 mkdir "%OUT%"
 
 call :copyfile "README.md"
-call :copyfile "TODO.md"
+call :copyfile "docs\TECHNICAL.md"
+call :copyfile "docs\TODO.md"
 call :copyfile "patches\src\main\kotlin\app\morphe\patches\facebook\marketplace\MarketplaceOnlyPatch.kt"
 call :copyfile "patches\src\main\kotlin\app\morphe\patches\facebook\marketplace\Fingerprints.kt"
 call :copyfile "patches\src\main\kotlin\app\morphe\patches\facebook\marketplace\MarketplaceRenamePatch.kt"
@@ -57,7 +58,7 @@ goto :eof
 set "SH=%OUT%\START_HERE.md"
 >>"%SH%" echo # START HERE (context bundle for a new AI chat)
 >>"%SH%" echo.
->>"%SH%" echo This is a trimmed copy of a personal project, not the whole repo. Read this file first, then README.md, then TODO.md.
+>>"%SH%" echo This is a trimmed copy of a personal project, not the whole repo. Read this file first, then README.md, then docs\TODO.md.
 >>"%SH%" echo.
 >>"%SH%" echo ## What the project is
 >>"%SH%" echo A Morphe patch set (Morphe patches APKs directly, no decompile or recompile) that turns the Facebook Android app (com.facebook.katana, version 582.0.0.50.54 only, arm64) into a Marketplace-only app. The patched app is renamed to package io.focalpoint.prism with the display name Marketplace and a storefront launcher icon, so it installs next to stock Facebook.
@@ -67,7 +68,7 @@ set "SH=%OUT%\START_HERE.md"
 >>"%SH%" echo - Marketplace rename (MarketplaceRenamePatch.kt): resource patch. Depends on Morphe's built-in Clone app patch for the package name, and sets android:label and android:icon in the manifest.
 >>"%SH%" echo.
 >>"%SH%" echo ## Status
->>"%SH%" echo See the checklist in TODO.md. The rename, icon, blank-strip fix, external links and Reels blocking are confirmed working on the device. Items marked [~] are written but untested, items marked [ ] are not started.
+>>"%SH%" echo See the checklist in docs\TODO.md. The rename, icon, blank-strip fix, external links and Reels blocking are confirmed working on the device. Items marked [~] are written but untested, items marked [ ] are not started.
 >>"%SH%" echo.
 >>"%SH%" echo ## How the work happens
 >>"%SH%" echo - The user builds on Windows with build.ps1 (Java 21 Temurin, git, a GitHub classic token with read:packages) and tests on a real phone, then reports back. Logs come from adb logcat.

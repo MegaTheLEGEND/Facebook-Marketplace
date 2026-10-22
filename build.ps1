@@ -2,7 +2,8 @@
 #   powershell -ExecutionPolicy Bypass -File .\build.ps1 -Apk "C:\path\to\facebook.apk"
 # Needs: Java 21+, git, internet. Build command/output path taken from morphe-patches' own CI.
 param(
-  [Parameter(Mandatory = $true)][string]$Apk,
+  [string]$Apk,                        # facebook APK to patch (not needed with -ExportMpp)
+  [switch]$ExportMpp,                  # only build the patch bundle and copy it to dist\marketplace-patches.mpp
   [string]$JavaExe = "java",          # path to a Temurin/Zulu/OpenJDK java.exe if Oracle JDK is first on PATH
   [switch]$KeepTabBar,                 # only change the startup tab; leave the bottom tab bar visible
   [switch]$KeepNavigation,             # do NOT lock swiping between tabs / the left Facebook menu
@@ -22,8 +23,10 @@ $ErrorActionPreference = "Continue"
 
 function Fail($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 
-if (-not (Test-Path -LiteralPath $Apk)) { Fail "APK not found: $Apk" }
-$Apk  = (Resolve-Path -LiteralPath $Apk).Path
+if (-not $ExportMpp) {
+  if (-not $Apk -or -not (Test-Path -LiteralPath $Apk)) { Fail "APK not found: $Apk (or use -ExportMpp)" }
+  $Apk = (Resolve-Path -LiteralPath $Apk).Path
+}
 $Here = $PSScriptRoot
 $Work = Join-Path $Here "work"; New-Item -ItemType Directory -Force $Work | Out-Null
 
@@ -97,6 +100,11 @@ $bundle = Get-ChildItem (Join-Path $P "patches\build\libs") -Filter "patches-*.m
   Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $bundle) { Fail "Build finished but no patches-*.mpp in patches\build\libs" }
 Write-Host "    bundle: $($bundle.FullName)"
+$dist = Join-Path $Here "dist"; New-Item -ItemType Directory -Force $dist | Out-Null
+$mpp = Join-Path $dist "marketplace-patches.mpp"
+Copy-Item -LiteralPath $bundle.FullName $mpp -Force
+Write-Host "    exported: $mpp" -ForegroundColor Green
+if ($ExportMpp) { Write-Host "Done. Import this .mpp into Morphe Manager / Desktop." -ForegroundColor Green; exit 0 }
 
 Write-Host "==> Getting Morphe Desktop (CLI)"
 $desk = Join-Path $Work "morphe-desktop.jar"

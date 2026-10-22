@@ -1,7 +1,8 @@
-# Build workspace: cloned morphe-patches template, Morphe Desktop jar, APKs, signing keystore
+# Build workspace (cloned morphe-patches, Morphe jar, APKs, keystore)
 work/
+dist/
 
-# APKs / bundles / dex dumps (never commit Facebook's APK, it isn't ours to redistribute)
+# Facebook APKs, bundles, dex dumps (never commit; not ours to redistribute)
 *.apk
 *.apks
 *.xapk
@@ -11,13 +12,15 @@ work/
 *.jks
 *.zip
 
-# Local test build output
+# Build / test output
 tests/out/
+*.class
 out/
 build/
 .gradle/
+ai-context/
 
-# Secrets (GitHub Packages token for the Morphe Gradle plugin)
+# Secrets (GitHub Packages token)
 .env
 *.token
 gradle.properties

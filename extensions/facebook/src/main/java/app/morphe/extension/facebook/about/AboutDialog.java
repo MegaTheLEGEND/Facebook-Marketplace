@@ -158,6 +158,7 @@ public final class AboutDialog {
         column.addView(divider(activity), topMargin(0));
         row(activity, column, "Developer", DEVELOPER);
         row(activity, column, "Patch", "Marketplace only (Morphe)");
+        row(activity, column, "Build", BuildInfo.VERSION);
         row(activity, column, "Based on", "Facebook " + TARGET_VERSION);
         row(activity, column, "Package", activity.getPackageName());
         row(activity, column, "Android", "API " + Build.VERSION.SDK_INT);

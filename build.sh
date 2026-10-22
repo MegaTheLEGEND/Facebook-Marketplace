@@ -5,9 +5,12 @@
 # Build command and output path taken from morphe-patches' own CI. Not yet run end-to-end - see README.
 set -euo pipefail
 
+EXPORT_ONLY=0
+if [ "${1:-}" = "--export-mpp" ]; then EXPORT_ONLY=1; APK=""; else
 APK="${1:-}"
-[ -n "$APK" ] && [ -f "$APK" ] || { echo "Usage: $0 /path/to/facebook.apk"; exit 1; }
+[ -n "$APK" ] && [ -f "$APK" ] || { echo "Usage: $0 /path/to/facebook.apk | $0 --export-mpp"; exit 1; }
 APK="$(cd "$(dirname "$APK")" && pwd)/$(basename "$APK")"
+fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="$HERE/work"; mkdir -p "$WORK"
@@ -43,6 +46,9 @@ echo "==> Building patch bundle"
 BUNDLE=$(ls -t "$P"/patches/build/libs/patches-*.mpp 2>/dev/null | head -1)
 [ -n "$BUNDLE" ] || { echo "Build finished but no patches-*.mpp in patches/build/libs"; exit 1; }
 echo "    bundle: $BUNDLE"
+mkdir -p "$(dirname "$0")/dist" && cp "$BUNDLE" "$(dirname "$0")/dist/marketplace-patches.mpp"
+echo "    exported: dist/marketplace-patches.mpp"
+[ "$EXPORT_ONLY" = 1 ] && { echo "Done. Import the .mpp into Morphe Manager / Desktop."; exit 0; }
 
 echo "==> Getting Morphe Desktop (CLI)"
 DESK="$WORK/morphe-desktop.jar"

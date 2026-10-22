@@ -1,0 +1,78 @@
+name: Build .mpp
+
+on:
+  push:
+    branches: [main, master]
+    paths: ["patches/**", "extensions/**", ".github/workflows/build-mpp.yml"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number (e.g. 1.2.0)"
+        required: true
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: write   # attach the .mpp to releases
+  packages: read    # Morphe's Gradle plugin lives on GitHub Packages
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set build version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          V="${INPUT_VERSION:-${TAG:-dev-${GITHUB_SHA::7}}}"
+          V="${V#v}"
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          sed -i "s|VERSION = \"[^\"]*\"|VERSION = \"$V\"|" extensions/facebook/src/main/java/app/morphe/extension/facebook/about/BuildInfo.java
+          grep VERSION extensions/facebook/src/main/java/app/morphe/extension/facebook/about/BuildInfo.java
+
+      - name: Fetch morphe-patches template
+        run: git clone --depth 1 https://github.com/MorpheApp/morphe-patches.git work/morphe-patches
+
+      - name: Copy our sources in
+        run: |
+          P=work/morphe-patches
+          mkdir -p $P/extensions/facebook $P/patches/src/main/kotlin/app/morphe/patches/facebook $P/patches/src/main/resources/marketplace-icon
+          cp -r extensions/facebook/. $P/extensions/facebook/
+          cp -r patches/src/main/kotlin/app/morphe/patches/facebook/. $P/patches/src/main/kotlin/app/morphe/patches/facebook/
+          cp -r patches/src/main/resources/marketplace-icon/. $P/patches/src/main/resources/marketplace-icon/
+
+      - name: Build patch bundle
+        working-directory: work/morphe-patches
+        env:
+          # If this token can't read Morphe's packages, add a repo secret GPR_TOKEN
+          # (classic PAT, read:packages only) and it will be used instead.
+          GPR_USER: ${{ github.actor }}
+          GPR_KEY: ${{ secrets.GPR_TOKEN || secrets.GITHUB_TOKEN }}
+        run: ./gradlew :patches:buildAndroid --no-daemon -Pgpr.user="$GPR_USER" -Pgpr.key="$GPR_KEY"
+
+      - name: Collect .mpp
+        run: |
+          mkdir -p dist
+          f=$(ls -t work/morphe-patches/patches/build/libs/patches-*.mpp | head -1)
+          cp "$f" "dist/marketplace-patches-$VERSION.mpp"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: marketplace-patches-${{ env.VERSION }}
+          path: dist/marketplace-patches-*.mpp
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/marketplace-patches-*.mpp --clobber
