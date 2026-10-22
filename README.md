@@ -16,6 +16,7 @@ Not affiliated with Meta. For personal use; don't commit or redistribute Faceboo
 
 | Links open in the system browser | `externalLinks` (on) | `X.dBh.A00` (the link launcher's WEBVIEW/EXTERNAL/CUSTOM_TABS decision) always returns EXTERNAL, same as Facebook's own "links open externally" setting. |
 | Blocks Reels / fullscreen video viewer | `blockReels` (on) | The launch chain `X.7rP.A01` -> `X.4Ok.A0C` -> `X.4Ok.A0B` -> `X.4Ok.A03` -> `ImmersiveActivity` (traced from a real logcat of tapping a profile reel) is cut: `7rP.A01`/`4Ok.A0A`/`4Ok.A03` return immediately, `4Ok.A0B` claims "handled" so callers don't fall back to the legacy player. `ImmersiveActivity` itself is NOT blocked, it hosts every full-screen surface incl. Marketplace item pages. |
+| Search stays in Marketplace | `blockFacebookSearch` (on) | Keeps search inside Marketplace. Layer 0, **checked in the dex**: `X.hQ5.A01(Context, Bundle, FbUserSession, GraphSearchQuery, int)V`, the single launcher of Facebook's search screen, returns immediately when the call comes from the profile handlers (`X.P9y`, `X.P9Y`, `X.P8e`, `com.facebook.timeline.*`); everything else, Marketplace's own search included, is allowed (an allow-list broke the Marketplace search button on device). That closes profile > More options > Search (`X.P9y` / `X.P9Y` -> `hQ5`), the nav-bar search, and Meta AI result cards. Two more layers for "Search in all of Facebook" / "Search with Meta AI" rows inside Marketplace search, both **unverified on a real APK**: (1) rows whose text / content description is one of those labels are hidden by a layout listener (`SearchScope.install()`, activity lifecycle callbacks; RN draws real views; English strings only); (2) a second MobileConfig filter chained after the group one (`SearchScope.filterBoolByName/BySpec`) forces matching Marketplace search flags to false and logs every candidate under tag `MarketplaceOnly`. |
 | Reclaims the tab bar's space | part of `hideTabBar` | After hiding the bar the extension keeps it 0 high, hides full-width filler views on the bottom edge and clears bottom padding/margin equal to the bar's old height (a few passes over the first 3 s). Logs the view tree under tag `MarketplaceOnly`. |
 | Back leaves the app | `marketplaceIsHome` (on) | In `onBackPressedInternal` the "home tab id" read from `X.1Hz.A02()` is replaced with Marketplace's id, so with nothing left to pop, back exits instead of switching to the Feed. |
 | Returning after a while stays on Marketplace | `returnToMarketplace` (on) | Every tab switch goes through `X.2FU.A06(..., int index)`, including Facebook's "reset to feed in background" routine (`X.2Nb.A03` -> `X.23K.A0T`). The patch replaces the requested index with Marketplace's (looked up by tab id), so the reset lands on Marketplace instead of the Feed. |
@@ -39,6 +40,7 @@ See [TODO.md](TODO.md) for what's next.
 | Return to Marketplace after a long absence | Written from the dex (`X.2FU.A06` index redirect, unit-tested on a JVM), **not yet tested on device** |
 | Always dark mode | Written from the dex (pins Facebook's own `ThemePreferences$State` to ON), **not yet tested on device** |
 | Remove group suggestions ("Recommended groups" on search, "Related groups" on a listing) | Written from the dex + the APK's MobileConfig metadata (React Native screens, so the group modules are switched off through their flags, `GroupSuggestions.java`), unit-tested on a JVM, **not yet tested on device** |
+| Search stays in Marketplace ("Search in all of Facebook", "Search with Meta AI") | Written without the APK (text matching + flag-name pattern), unit-tested on a JVM with fake views, **not yet tested on device** |
 | Navigation lock | **Works on device**: app launches, swipe and the side menu are blocked. The hamburger icon is still drawn (see TODO) |
 | Extension logic | Unit-tested on a plain JVM (`tests/`) |
 | Rename to `io.focalpoint.prism` / "Marketplace" + storefront icon | **Works on device** (builds, installs next to stock Facebook, launches) |
@@ -97,7 +99,7 @@ adb logcat | findstr /i "AndroidRuntime VerifyError katana prism"
 
 ```
 patches/     Kotlin: fingerprints + the "Marketplace only" patch + the "Marketplace rename" patch
-extensions/  Java: runtime logic injected into the app (MarketplaceOnly, GroupSuggestions)
+extensions/  Java: runtime logic injected into the app (MarketplaceOnly, GroupSuggestions, SearchScope)
 tests/       Plain-JVM unit tests for the extension (mock class shapes)
 tools/       dexscan.py - find strings, callers, classes in the app's dex files
 tools/icon/  preview.webp (source icon) + make_icon.py, which regenerates patches/src/main/resources/marketplace-icon/

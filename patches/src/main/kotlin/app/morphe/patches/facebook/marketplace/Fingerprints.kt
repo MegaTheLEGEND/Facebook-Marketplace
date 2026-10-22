@@ -350,3 +350,46 @@ internal object MobileConfigGetBoolWithoutLoggingWithContextualIdFingerprint : F
     returnType = "Z",
     parameters = listOf("D", "D", "Ljava/lang/String;")
 )
+
+
+// ---------------------------------------------------------------------------------------------
+// Facebook-wide search ("Search in all of Facebook", Meta AI search, profile > More options > Search).
+//
+// Found in the dex of 582.0.0.50.54 (classes17.dex), traced from the profile screen:
+//   profile search tap: `X.P8e.onClick` (ProfileFragment, logs "profile_search" / "title_bar_search_profile")
+//     -> `X.Bap.A01(Fragment)` -> `X.Bap.A00(Bundle, Fragment, FbUserSession)V` (puts SearchEntryPoint "SEARCH_BOX")
+//     -> `X.hQ5.A00(Context, Bundle, FbUserSession, GraphSearchQuery)V` -> `X.hQ5.A01(..., int)V`.
+//   profile menu / click handlers that reach the same launcher: `X.P9Y` ("profile_search", "search_all",
+//   "return_to_global_search"), `X.P9y` ("SEARCH_BOX"), `X.P9z`, `X.P9v`, `X.PA0`, `X.Ntz`, `X.P3i`, `X.O5B`, `X.Pi4`,
+//   `X.alD`, `X.bgU`, `X.cXL`, `X.53t`, `X.BhQ`, `X.Bi9`, and the Meta AI cards `X.bL0.A00` / `X.8Z7.E1V`.
+//   Marketplace's OWN search box also uses it: `com.facebook.fbreact.marketplace.FBReactSearchInputNativeModule`
+//   `.focusSearchBox / ...WithScope / ...WithScopeAndSource / ...WithScopeAndSourceAndArgs` call `hQ5.A01(...)` directly
+//   (scope = `X.7rG.valueOf(scopeName)` -> `X.fvh.A0k(scope)` GraphSearchQuery). So the launcher can't simply be disabled.
+//
+// `X.hQ5.A01(Context, Bundle, FbUserSession, GraphSearchQuery, int)V`: the ONE place that builds the search Intent
+// (`X.GxG.A04()` + extra "target_fragment" = 38, "typeahead_session_id", "candidate_session_id", "initial_typeahead_query"),
+// logs the entry point and starts it with `X.7Nv.A0A(Context, Intent)Z`. 11 registers: p0 = v5 (this), p1..p5 = v6..v10;
+// v0..v4 are free at entry (the first instruction only reads v8 and v6). Nothing before the Intent is built has side effects,
+// so returning at index 0 is clean.
+// The patch inserts a stack check at index 0 (SearchScope.allowSearchLaunch): calls from the profile handlers X.P9y, X.P9Y, X.P8e
+// (and anything under com.facebook.timeline.) return immediately, everything else, Marketplace's own search included, is allowed.
+// (An allow-list of only the Marketplace RN module broke Marketplace's search button on device, so it is a deny-list now.) Anchored by class + name + signature (obfuscated, this build only); the
+// strings "typeahead_session_id" / "candidate_session_id" are NOT unique to this method (also in X.hYz.A00, X.ggd, X.hX7, ...), so
+// they can't anchor it.
+// NOT covered: the search RESULTS intent builder `X.hYz.A00()Landroid/content/Intent;` (target_fragment from a field, component
+// `X.3mu` id 245835) used by ~20 callers incl. `MarketplaceShopsActivity`, Google Now / deep-link handlers and SERP tab clicks.
+// Left alone because Marketplace itself uses it; a deep link or notification could still open a Facebook search results page.
+// ---------------------------------------------------------------------------------------------
+
+internal object SearchLauncherFingerprint : Fingerprint(
+    definingClass = "LX/hQ5;",
+    name = "A01",
+    returnType = "V",
+    parameters = listOf(
+        "Landroid/content/Context;",
+        "Landroid/os/Bundle;",
+        "Lcom/facebook/auth/usersession/FbUserSession;",
+        "Lcom/facebook/search/api/GraphSearchQuery;",
+        "I"
+    )
+)

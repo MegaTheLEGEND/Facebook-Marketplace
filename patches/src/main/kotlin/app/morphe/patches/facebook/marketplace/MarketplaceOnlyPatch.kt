@@ -23,6 +23,9 @@ private const val EXTENSION_CLASS =
 private const val GROUP_EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/GroupSuggestions;"
 
+private const val SEARCH_EXTENSION_CLASS =
+    "Lapp/morphe/extension/facebook/marketplace/SearchScope;"
+
 internal val hideTabBarOption = booleanOption(
     key = "hideTabBar",
     default = true,
@@ -83,6 +86,24 @@ internal val blockGroupSuggestionsOption = booleanOption(
         "listing pages (Facebook's GYSJ units) by switching their MobileConfig flags off."
 )
 
+internal val blockFacebookSearchOption = booleanOption(
+    key = "blockFacebookSearch",
+    default = true,
+    title = "Keep search inside Marketplace",
+    description = "Removes the \"Search in all of Facebook\" and \"Search with Meta AI\" entries from Marketplace " +
+        "search, and blocks every other way into Facebook global search (e.g. profile > More options > Search)."
+)
+
+internal val hideProfileSettingsNoteOption = booleanOption(
+    key = "hideProfileSettingsNote",
+    default = true,
+    title = "Hide profile \"Go to settings\" note",
+    description = "Removes the paragraph with the \"Go to settings\" link on the Marketplace profile screen."
+)
+
+private const val PROFILE_EXTENSION_CLASS =
+    "Lapp/morphe/extension/facebook/marketplace/ProfileNotice;"
+
 /**
  * Universal-style declaration (no compatibleWith): the compatibility object needs the app's
  * signing-certificate SHA-256, which isn't available from the dex files. The fingerprint
@@ -107,6 +128,8 @@ val marketplaceOnlyPatch = bytecodePatch(
     returnToMarketplaceOption()
     forceDarkModeOption()
     blockGroupSuggestionsOption()
+    blockFacebookSearchOption()
+    hideProfileSettingsNoteOption()
 
     execute {
         val hideTabBar by hideTabBarOption
@@ -117,6 +140,8 @@ val marketplaceOnlyPatch = bytecodePatch(
         val returnToMarketplace by returnToMarketplaceOption
         val forceDarkMode by forceDarkModeOption
         val blockGroupSuggestions by blockGroupSuggestionsOption
+        val blockFacebookSearch by blockFacebookSearchOption
+        val hideProfileSettingsNote by hideProfileSettingsNoteOption
 
         val entryPoint =
             if (hideTabBar == true) "onStartingTabDeterminedHideBar" else "onStartingTabDetermined"
@@ -136,6 +161,15 @@ val marketplaceOnlyPatch = bytecodePatch(
             // Reverse order keeps earlier indices valid.
             returnIndices.forEach { index ->
                 addInstructions(index, "invoke-static {}, $EXTENSION_CLASS->$entryPoint()V")
+                if (blockFacebookSearch == true) {
+                    // Registers the activity callbacks that hide "Search in all of Facebook" / "Search with
+                    // Meta AI" rows. No arguments (same rule as above); idempotent, so every return may call it.
+                    addInstructions(index, "invoke-static {}, $SEARCH_EXTENSION_CLASS->install()V")
+                }
+                if (hideProfileSettingsNote == true) {
+                    // Same no-register, idempotent hook: hides the "Go to settings" paragraph (ProfileNotice).
+                    addInstructions(index, "invoke-static {}, $PROFILE_EXTENSION_CLASS->install()V")
+                }
             }
 
             // At method entry p0 ("this") is guaranteed to hold the controller. /range because
@@ -286,13 +320,36 @@ val marketplaceOnlyPatch = bytecodePatch(
             FdsIsDarkFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
         }
 
-        if (blockGroupSuggestions == true) {
-            // Marketplace search / listing pages are React Native, so the group blocks can't be removed from the
-            // view tree; their MobileConfig flags can. Filter the result of every boolean getter of the RN
-            // MobileConfig module (see Fingerprints.kt for the register analysis). The filter is inserted right
-            // before the (last) `return`: the `move-result` before it has already put Facebook's value in the
-            // returned register, and the extension hands back the value to use instead. No branches needed.
+        if (blockFacebookSearch == true) {
+            // Gate on X.hQ5.A01, the single launcher of Facebook's search screen (see Fingerprints.kt). v0 is a free
+            // local at entry (11 registers, 6 parameters). The labels live inside this one snippet; the `nop` gives
+            // the :allow label an instruction to sit on. Calls from Marketplace's own search box are let through.
+            SearchLauncherFingerprint.method.addInstructions(
+                0,
+                """
+                    invoke-static {}, $SEARCH_EXTENSION_CLASS->allowSearchLaunch()Z
+                    move-result v0
+                    if-nez v0, :allow_search
+                    return-void
+                    :allow_search
+                    nop
+                """
+            )
+        }
 
+        // Both options filter the same six MobileConfig getters. They share one injection routine, which is
+        // called once per extension class; a second call chains after the first (it inserts before the last
+        // `return`, and the first filter's `move-result` already holds the value the next one sees).
+
+        /**
+         * Filters the boolean result of the six MobileConfigNativeModule getters through
+         * `extensionClass->filterBoolByName(String, Z)Z` and `extensionClass->filterBoolBySpec(JZ)Z`.
+         * Marketplace search / listing pages are React Native, so their blocks can't be removed from the view tree;
+         * their MobileConfig flags can. See Fingerprints.kt for the register analysis. The filter is inserted right
+         * before the (last) `return`: the `move-result` before it has already put Facebook's value in the returned
+         * register, and the extension hands back the value to use instead. No branches needed.
+         */
+        fun hookMobileConfigBools(extensionClass: String) {
             // By name: `p1` (the flag name, v2) is never overwritten in these two methods.
             listOf(
                 MobileConfigGetBoolFingerprint,
@@ -305,7 +362,7 @@ val marketplaceOnlyPatch = bytecodePatch(
                     addInstructions(
                         returnIndex,
                         """
-                            invoke-static { p1, v$result }, $GROUP_EXTENSION_CLASS->filterBoolByName(Ljava/lang/String;Z)Z
+                            invoke-static { p1, v$result }, $extensionClass->filterBoolByName(Ljava/lang/String;Z)Z
                             move-result v$result
                         """
                     )
@@ -333,12 +390,15 @@ val marketplaceOnlyPatch = bytecodePatch(
                     addInstructions(
                         returnIndex,
                         """
-                            invoke-static { v$specRegister, v${specRegister + 1}, v$result }, $GROUP_EXTENSION_CLASS->filterBoolBySpec(JZ)Z
+                            invoke-static { v$specRegister, v${specRegister + 1}, v$result }, $extensionClass->filterBoolBySpec(JZ)Z
                             move-result v$result
                         """
                     )
                 }
             }
         }
+
+        if (blockGroupSuggestions == true) hookMobileConfigBools(GROUP_EXTENSION_CLASS)
+        if (blockFacebookSearch == true) hookMobileConfigBools(SEARCH_EXTENSION_CLASS)
     }
 }
