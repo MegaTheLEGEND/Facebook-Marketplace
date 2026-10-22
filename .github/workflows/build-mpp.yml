@@ -43,22 +43,26 @@ jobs:
       - name: Fetch morphe-patches template
         run: git clone --depth 1 https://github.com/MorpheApp/morphe-patches.git work/morphe-patches
 
-      - name: Copy our sources in
+      - name: Copy our sources in, drop everything else
         run: |
           P=work/morphe-patches
           mkdir -p $P/extensions/facebook $P/patches/src/main/kotlin/app/morphe/patches/facebook $P/patches/src/main/resources/marketplace-icon
           cp -r extensions/facebook/. $P/extensions/facebook/
           cp -r patches/src/main/kotlin/app/morphe/patches/facebook/. $P/patches/src/main/kotlin/app/morphe/patches/facebook/
           cp -r patches/src/main/resources/marketplace-icon/. $P/patches/src/main/resources/marketplace-icon/
+          # Facebook-only bundle: drop every other app's patches and the universal ones.
+          K=$P/patches/src/main/kotlin/app/morphe/patches
+          rm -rf $K/youtube $K/music $K/reddit $K/shared $K/util $P/patches/src/test
+          for d in debugging installer network resources signature updates; do rm -rf $K/all/misc/$d; done
+          find $P/patches/src/main/resources -mindepth 1 -maxdepth 1 ! -name marketplace-icon -exec rm -rf {} +
+          rm -rf $P/extensions/youtube $P/extensions/music $P/extensions/reddit $P/extensions/shared $P/extensions/shared-youtube
 
       - name: Build patch bundle
         working-directory: work/morphe-patches
         env:
-          # If this token can't read Morphe's packages, add a repo secret GPR_TOKEN
-          # (classic PAT, read:packages only) and it will be used instead.
           GPR_USER: ${{ github.actor }}
           GPR_KEY: ${{ secrets.GPR_TOKEN || secrets.GITHUB_TOKEN }}
-        run: ./gradlew :patches:buildAndroid --no-daemon -Pgpr.user="$GPR_USER" -Pgpr.key="$GPR_KEY"
+        run: ./gradlew :patches:buildAndroid --no-daemon -Pversion="$VERSION" -Pgpr.user="$GPR_USER" -Pgpr.key="$GPR_KEY"
 
       - name: Collect .mpp
         run: |

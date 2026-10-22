@@ -133,3 +133,7 @@ Rule learned the hard way: before injecting smali, check the method's register c
 
 ## Exporting the .mpp
 `build.ps1 -ExportMpp` (Windows) or `./build.sh --export-mpp` builds only the patch bundle and copies it to `dist/marketplace-patches.mpp`. A normal build (with an APK) also writes it there.
+
+
+## Build model
+Each build clones `MorpheApp/morphe-patches` into `work/`, copies in our `extensions/facebook` and `patches/.../facebook`, deletes every other app's patches and the universal ones (so the `.mpp` is Facebook-only, plus the "Clone app" patch the rename patch depends on), then runs `./gradlew :patches:buildAndroid`. Output: `work/morphe-patches/patches/build/libs/patches-*.mpp`.

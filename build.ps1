@@ -86,6 +86,13 @@ Copy-Item "$Here\patches\src\main\kotlin\app\morphe\patches\facebook\*" $patDst 
 $resDst = Join-Path $P "patches\src\main\resources\marketplace-icon"
 New-Item -ItemType Directory -Force $resDst | Out-Null
 Copy-Item "$Here\patches\src\main\resources\marketplace-icon\*" $resDst -Recurse -Force
+# Facebook-only bundle: drop every other app's patches and the universal ones.
+$K = Join-Path $P "patches\src\main\kotlin\app\morphe\patches"
+foreach ($d in "youtube","music","reddit","shared","util") { Remove-Item -Recurse -Force (Join-Path $K $d) -ErrorAction SilentlyContinue }
+Remove-Item -Recurse -Force (Join-Path $P "patches\src\test") -ErrorAction SilentlyContinue
+foreach ($d in "debugging","installer","network","resources","signature","updates") { Remove-Item -Recurse -Force (Join-Path $K "all\misc\$d") -ErrorAction SilentlyContinue }
+Get-ChildItem (Join-Path $P "patches\src\main\resources") -Directory | Where-Object Name -ne "marketplace-icon" | Remove-Item -Recurse -Force
+foreach ($d in "youtube","music","reddit","shared","shared-youtube") { Remove-Item -Recurse -Force (Join-Path $P "extensions\$d") -ErrorAction SilentlyContinue }
 
 Write-Host "==> Building patch bundle (first run downloads a lot; this can take several minutes)"
 Push-Location $P
