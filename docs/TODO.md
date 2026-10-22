@@ -25,6 +25,12 @@
   - Confirmed by the user as working on device.
   - Scope: Marketplace search and listing-page group suggestion blocks. Other native Facebook Groups-related UI may remain outside the Marketplace surface.
 
+- [ ] **Remove ads and group remnants from listing pages**.
+  - Inspect listing pages while scrolling down and remove the **Related ads** and **Suggested ad products** sections.
+  - Remove the Groups-related sections appearing in the same area: **Related groups** and **Groups discussion**.
+  - Check multiple listings and scroll positions to ensure these sections are consistently hidden without breaking the listing page or normal scrolling.
+  - Do not mark complete until confirmed working on-device.
+
 - [ ] **Keep search inside Marketplace**: remove “Search in all of Facebook” and “Search with Meta AI” from Marketplace search.
   - The `blockFacebookSearch` option is enabled by default, but device behavior has not yet been confirmed.
   - Test Marketplace search suggestions and results with a query. Confirm both entries are absent and Marketplace search still works.
@@ -68,6 +74,12 @@
   - Protect unintended activities while preserving the Marketplace launcher entry point, required Android system integrations, legitimate navigation, and any required deep links.
   - Test external launch attempts, for example with `adb shell am start -n <package>/<activity>`, and inspect installed package details with `adb shell dumpsys package io.focalpoint.prism`.
   - Acceptance criteria: external apps cannot directly launch unintended internal activities, while the Marketplace launcher and normal in-app navigation continue to work.
+
+- [ ] **Random A/B UI on fresh install**: occasionally the app loads a different UI than the original Facebook app, and it only happens during install (first launch after installing).
+  - Reported by the user; not investigated yet.
+  - Unconfirmed guess: Facebook's server-side A/B / experiment flags give a freshly installed (cloned `io.focalpoint.prism`) copy a different layout variant. Needs checking.
+  - To investigate: capture a screenshot of the odd UI and `adb logcat -s MarketplaceOnly` while it happens; compare with a reinstall (does it go away?) and with a fresh install of the stock app.
+  - Check whether any patch hook (return-to-Marketplace, back, dark mode, search/group filters) is skipped on first launch.
 
 ## Notes
 
