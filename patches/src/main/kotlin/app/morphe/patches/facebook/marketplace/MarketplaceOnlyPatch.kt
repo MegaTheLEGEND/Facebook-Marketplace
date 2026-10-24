@@ -22,6 +22,9 @@ private const val THEME_STATE = "Lcom/facebook/prefs/theme/ThemePreferences\$Sta
 private const val EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/MarketplaceOnly;"
 
+private const val PDP_ADS_EXTENSION_CLASS =
+    "Lapp/morphe/extension/facebook/marketplace/PdpAds;"
+
 private const val GROUP_EXTENSION_CLASS =
     "Lapp/morphe/extension/facebook/marketplace/GroupSuggestions;"
 
@@ -179,6 +182,8 @@ val marketplaceOnlyPatch = bytecodePatch(
                     // Meta AI" rows. No arguments (same rule as above); idempotent, so every return may call it.
                     addInstructions(index, "invoke-static {}, $SEARCH_EXTENSION_CLASS->install()V")
                 }
+                // Hides the ad blocks on the listing page (PdpAds): same no-register, idempotent hook.
+                addInstructions(index, "invoke-static {}, $PDP_ADS_EXTENSION_CLASS->install()V")
                 if (hideProfileSettingsNote == true) {
                     // Same no-register, idempotent hook: hides the "Go to settings" paragraph (ProfileNotice).
                     addInstructions(index, "invoke-static {}, $PROFILE_EXTENSION_CLASS->install()V")
