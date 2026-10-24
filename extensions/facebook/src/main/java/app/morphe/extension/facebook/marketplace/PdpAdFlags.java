@@ -23,6 +23,14 @@ public final class PdpAdFlags {
         add("fb_marketplace_ads:enable_marketplace_pdp_e2e_ads_rendering_capability", 0x8100b0046908cfL);
         add("fb_marketplace_ads:enable_marketplace_pdp_e2e_carousel_ads", 0x8100b0039f0889L);
         add("fb_marketplace_ads:should_use_dynamic_ad_modules", 0x8100b001ab07ddL);
+        // The listing page's two ad modules: "personalized" (boosted listings) and "contextual" (instant-intent /
+        // relevant ads). Their dedup flag (dedup_between_pdp_contextual_and_personalized_module_v2) shows they pair.
+        add("marketplace_boosted_listing:mp_pdp_personalized_bl_ads_enabled", 0x1010ae8000b59e7L);
+        add("mp_ecomm_fundamentals_pdp_rewrite:should_show_boosted_listing_ads", 0x8110b8000d5a6dL);
+        add("fb_marketplace_ads:should_show_instant_intent_ads", 0x8100b0008e07b0L);
+        add("fb_marketplace_ads:show_instant_intent_ads", 0x208100b0035c0869L);
+        add("fb_marketplace_ads:should_show_instant_intent_ads_photo_view", 0x8100b0009307b1L);
+        add("fb_marketplace_ads:fetch_more_ads_for_pdp_deduped_module", 0x8100b002e30836L);
     }
 
     private PdpAdFlags() {
