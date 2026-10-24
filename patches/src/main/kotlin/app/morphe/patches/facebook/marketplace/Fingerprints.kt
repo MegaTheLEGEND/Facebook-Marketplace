@@ -445,3 +445,15 @@ internal object NavBarSearchButtonFingerprint : Fingerprint(
     definingClass = "LX/60b;",
     filters = listOf(string("nav_bar_search_button"))
 )
+
+/**
+ * Facebook 582.0.0.50.54: `LX/CCf;->A0H()V`, the group page title bar setup (ImmersiveActivity). It sets the
+ * "Search in <group>" description on the search button and, in one branch, already calls the title bar's own
+ * `Poj.setHidesSearchButton(true)`. 12 registers, p0 = v11; v0/v1 are free at entry.
+ */
+internal object GroupTitleBarSetupFingerprint : Fingerprint(
+    definingClass = "LX/CCf;",
+    name = "A0H",
+    returnType = "V",
+    parameters = listOf()
+)

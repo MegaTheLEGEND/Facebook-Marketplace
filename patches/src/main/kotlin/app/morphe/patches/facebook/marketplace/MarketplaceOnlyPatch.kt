@@ -356,6 +356,21 @@ val marketplaceOnlyPatch = bytecodePatch(
             FdsIsDarkFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
         }
 
+        // Group pages (ImmersiveActivity): ask the title bar to hide its search button, using Facebook's own
+        // Poj.setHidesSearchButton(true) (the same call A0H makes itself in one branch).
+        GroupTitleBarSetupFingerprint.method.addInstructions(
+            0,
+            """
+                invoke-static {p0}, LX/9zQ;->A0V(LX/5ku;)LX/Poj;
+                move-result-object v0
+                if-eqz v0, :no_title_bar
+                const/4 v1, 0x1
+                invoke-interface {v0, v1}, LX/Poj;->setHidesSearchButton(Z)V
+                :no_title_bar
+                nop
+            """
+        )
+
         // Drop the top-bar Search icon: the `ArrayList.add(button)` right after its "nav_bar_search_button" tag
         // becomes a nop, so the bar's action list stays empty. Only this one NavigationBarComponent site.
         NavBarSearchButtonFingerprint.method.apply {
