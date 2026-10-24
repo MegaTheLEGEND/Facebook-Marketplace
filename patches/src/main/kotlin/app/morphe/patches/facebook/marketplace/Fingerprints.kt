@@ -434,3 +434,14 @@ internal object MarketplaceMenuItemsFingerprint : Fingerprint(
         "Landroid/content/Context;"
     )
 )
+
+/**
+ * Facebook 582.0.0.50.54: `LX/60b;->A1B(LX/1UN;II)LX/1HX;`, the Litho render of `NavigationBarComponent`
+ * (the top bar of ImmersiveReactActivity). At 0x00bc it tags the top-right Search icon
+ * `nav_bar_search_button` and at 0x00df adds it to the action list (`ArrayList.add`). The string also occurs in
+ * `LX/qWZ;`, so the class is pinned.
+ */
+internal object NavBarSearchButtonFingerprint : Fingerprint(
+    definingClass = "LX/60b;",
+    filters = listOf(string("nav_bar_search_button"))
+)

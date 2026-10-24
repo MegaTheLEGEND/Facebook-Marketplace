@@ -13,6 +13,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
 
@@ -353,6 +354,21 @@ val marketplaceOnlyPatch = bytecodePatch(
             ThemeIsDarkFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
             ThemeApplyFingerprint.method.addInstructions(0, "const/4 p2, 0x1")
             FdsIsDarkFingerprint.method.addInstructions(0, "const/4 v0, 0x1\nreturn v0")
+        }
+
+        // Drop the top-bar Search icon: the `ArrayList.add(button)` right after its "nav_bar_search_button" tag
+        // becomes a nop, so the bar's action list stays empty. Only this one NavigationBarComponent site.
+        NavBarSearchButtonFingerprint.method.apply {
+            val ins = implementation!!.instructions
+            val tag = ins.indexOfFirst {
+                (it.opcode == Opcode.CONST_STRING || it.opcode == Opcode.CONST_STRING_JUMBO) &&
+                    ((it as ReferenceInstruction).reference as StringReference).string == "nav_bar_search_button"
+            }
+            val add = (tag until ins.size).first {
+                ins[it].opcode == Opcode.INVOKE_VIRTUAL &&
+                    ((ins[it] as ReferenceInstruction).reference as MethodReference).name == "add"
+            }
+            replaceInstruction(add, "nop")
         }
 
         if (blockFacebookSearch == true) {
